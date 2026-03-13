@@ -1,0 +1,10 @@
+/target
+**/*.rs.bk
+node_modules/
+dist/
+.DS_Store
+*.log
+.env
+.env.local
+crates/app/binaries/
+tarpaulin-report.html

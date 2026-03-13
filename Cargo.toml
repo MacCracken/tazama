@@ -1,0 +1,60 @@
+[workspace]
+members = [
+    "crates/core",
+    "crates/storage",
+    "crates/gpu",
+    "crates/app",
+    "crates/mcp",
+]
+resolver = "2"
+
+[workspace.package]
+version = "2026.3.13"
+edition = "2024"
+authors = ["Robert MacCracken <robert.maccracken@gmail.com>"]
+license = "AGPL-3.0"
+repository = "https://github.com/anomalyco/tazama"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# HTTP / API
+axum = { version = "0.8", features = ["ws", "macros"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+# Database
+sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio", "macros", "chrono"] }
+
+# Utilities
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+bytes = "1"
+sha2 = "0.10"
+
+# Media / Video
+gstreamer = "0.23"
+gstreamer-video = "0.23"
+gstreamer-audio = "0.23"
+gstreamer-app = "0.23"
+gstreamer-pbutils = "0.23"
+
+# GPU
+ash = "0.38"
+gpu-allocator = { version = "0.27", features = ["vulkan"] }
