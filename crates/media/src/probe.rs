@@ -1,0 +1,196 @@
+use std::path::Path;
+
+use gstreamer_pbutils::prelude::*;
+use gstreamer_pbutils::Discoverer;
+use tazama_core::{AudioStreamInfo, Codec, ContainerFormat, MediaInfo, VideoStreamInfo};
+use tokio::task;
+
+use crate::error::MediaPipelineError;
+
+/// Probe a media file and extract its metadata.
+pub async fn probe(path: &Path) -> Result<MediaInfo, MediaPipelineError> {
+    let path = path.to_path_buf();
+    task::spawn_blocking(move || probe_sync(&path))
+        .await
+        .map_err(|e| MediaPipelineError::Decode(e.to_string()))?
+}
+
+fn probe_sync(path: &Path) -> Result<MediaInfo, MediaPipelineError> {
+    if !path.exists() {
+        return Err(MediaPipelineError::FileNotFound(
+            path.display().to_string(),
+        ));
+    }
+
+    let timeout = gstreamer::ClockTime::from_seconds(10);
+    let discoverer = Discoverer::new(timeout)?;
+
+    let uri = if path.is_absolute() {
+        format!("file://{}", path.display())
+    } else {
+        let abs = std::fs::canonicalize(path)?;
+        format!("file://{}", abs.display())
+    };
+
+    let info = discoverer.discover_uri(&uri).map_err(|e| {
+        MediaPipelineError::ProbeFailed {
+            path: path.display().to_string(),
+            reason: e.to_string(),
+        }
+    })?;
+
+    let duration_ns = info.duration().map(|d| d.nseconds()).unwrap_or(0);
+    let duration_ms = duration_ns / 1_000_000;
+
+    let container = detect_container(path);
+
+    let mut video_streams = Vec::new();
+    let mut audio_streams = Vec::new();
+
+    for stream in info.video_streams() {
+        let caps = stream.caps();
+        let (width, height, frame_rate, bit_depth, pixel_format) = if let Some(caps) = caps {
+            parse_video_caps(&caps)
+        } else {
+            (0, 0, (0, 1), 8, "unknown".to_string())
+        };
+
+        video_streams.push(VideoStreamInfo {
+            codec: detect_video_codec(&stream),
+            width,
+            height,
+            frame_rate,
+            bit_depth,
+            pixel_format,
+        });
+    }
+
+    for stream in info.audio_streams() {
+        let caps = stream.caps();
+        let (sample_rate, channels, bit_depth) = if let Some(caps) = caps {
+            parse_audio_caps(&caps)
+        } else {
+            (0, 0, 0)
+        };
+
+        audio_streams.push(AudioStreamInfo {
+            codec: detect_audio_codec(&stream),
+            sample_rate,
+            channels,
+            bit_depth,
+        });
+    }
+
+    let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+
+    // Estimate duration in frames from first video stream
+    let duration_frames = if let Some(vs) = video_streams.first() {
+        let (num, den) = vs.frame_rate;
+        if den > 0 {
+            (duration_ms as f64 * num as f64 / den as f64 / 1000.0).round() as u64
+        } else {
+            0
+        }
+    } else {
+        0
+    };
+
+    Ok(MediaInfo {
+        duration_ms,
+        duration_frames,
+        container,
+        video_streams,
+        audio_streams,
+        file_size,
+    })
+}
+
+fn detect_container(path: &Path) -> ContainerFormat {
+    match path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase())
+        .as_deref()
+    {
+        Some("mp4" | "m4v") => ContainerFormat::Mp4,
+        Some("mkv") => ContainerFormat::Mkv,
+        Some("webm") => ContainerFormat::WebM,
+        Some("mov") => ContainerFormat::Mov,
+        Some("avi") => ContainerFormat::Avi,
+        _ => ContainerFormat::Other,
+    }
+}
+
+fn detect_video_codec(stream: &gstreamer_pbutils::DiscovererVideoInfo) -> Codec {
+    let caps = match stream.caps() {
+        Some(c) => c,
+        None => return Codec::Other,
+    };
+    let caps_str = caps.to_string();
+    if caps_str.contains("h264") || caps_str.contains("x-h264") {
+        Codec::H264
+    } else if caps_str.contains("h265") || caps_str.contains("x-h265") {
+        Codec::H265
+    } else if caps_str.contains("vp9") || caps_str.contains("x-vp9") {
+        Codec::Vp9
+    } else if caps_str.contains("av1") || caps_str.contains("x-av1") {
+        Codec::Av1
+    } else {
+        Codec::Other
+    }
+}
+
+fn detect_audio_codec(stream: &gstreamer_pbutils::DiscovererAudioInfo) -> Codec {
+    let caps = match stream.caps() {
+        Some(c) => c,
+        None => return Codec::Other,
+    };
+    let caps_str = caps.to_string();
+    if caps_str.contains("aac") || caps_str.contains("mpeg") {
+        Codec::Aac
+    } else if caps_str.contains("opus") {
+        Codec::Opus
+    } else if caps_str.contains("flac") {
+        Codec::Flac
+    } else if caps_str.contains("mp3") || caps_str.contains("layer3") {
+        Codec::Mp3
+    } else {
+        Codec::Other
+    }
+}
+
+fn parse_video_caps(caps: &gstreamer::Caps) -> (u32, u32, (u32, u32), u32, String) {
+    let structure = match caps.structure(0) {
+        Some(s) => s,
+        None => return (0, 0, (0, 1), 8, "unknown".to_string()),
+    };
+
+    let width = structure.get::<i32>("width").unwrap_or(0) as u32;
+    let height = structure.get::<i32>("height").unwrap_or(0) as u32;
+
+    let frame_rate = structure
+        .get::<gstreamer::Fraction>("framerate")
+        .map(|f| (f.numer() as u32, f.denom() as u32))
+        .unwrap_or((0, 1));
+
+    let bit_depth = structure.get::<i32>("depth").unwrap_or(8) as u32;
+
+    let pixel_format = structure
+        .get::<String>("format")
+        .unwrap_or_else(|_| "unknown".to_string());
+
+    (width, height, frame_rate, bit_depth, pixel_format)
+}
+
+fn parse_audio_caps(caps: &gstreamer::Caps) -> (u32, u16, u32) {
+    let structure = match caps.structure(0) {
+        Some(s) => s,
+        None => return (0, 0, 0),
+    };
+
+    let sample_rate = structure.get::<i32>("rate").unwrap_or(0) as u32;
+    let channels = structure.get::<i32>("channels").unwrap_or(0) as u16;
+    let bit_depth = structure.get::<i32>("depth").unwrap_or(0) as u32;
+
+    (sample_rate, channels, bit_depth)
+}

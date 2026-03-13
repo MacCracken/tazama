@@ -34,6 +34,7 @@ pub struct MediaRef {
     pub height: Option<u32>,
     pub sample_rate: Option<u32>,
     pub channels: Option<u16>,
+    pub info: Option<crate::media_info::MediaInfo>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

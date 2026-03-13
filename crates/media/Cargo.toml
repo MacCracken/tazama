@@ -1,0 +1,22 @@
+[package]
+name = "tazama-media"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+tazama-core = { path = "../core" }
+serde.workspace = true
+gstreamer.workspace = true
+gstreamer-video.workspace = true
+gstreamer-audio.workspace = true
+gstreamer-app.workspace = true
+gstreamer-pbutils.workspace = true
+tokio.workspace = true
+bytes.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
