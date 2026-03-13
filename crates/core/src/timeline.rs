@@ -12,6 +12,16 @@ pub enum TimelineError {
     ClipNotFound(ClipId),
     #[error("clip overlap at frame {0}")]
     ClipOverlap(u64),
+    #[error("invalid split point: frame {0}")]
+    InvalidSplitPoint(u64),
+    #[error("invalid trim: offset={offset}, duration={duration}, max={max_duration}")]
+    InvalidTrim {
+        offset: u64,
+        duration: u64,
+        max_duration: u64,
+    },
+    #[error("track is locked")]
+    TrackLocked,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -57,8 +67,25 @@ impl Track {
         }
     }
 
+    /// Check if a clip would overlap with any existing clip on this track.
+    fn check_overlap(&self, start: u64, end: u64, exclude_id: Option<ClipId>) -> Result<(), TimelineError> {
+        for c in &self.clips {
+            if Some(c.id) == exclude_id {
+                continue;
+            }
+            let c_end = c.timeline_end();
+            if start < c_end && end > c.timeline_start {
+                return Err(TimelineError::ClipOverlap(start.max(c.timeline_start)));
+            }
+        }
+        Ok(())
+    }
+
     pub fn add_clip(&mut self, clip: Clip) -> Result<(), TimelineError> {
-        // TODO: overlap detection
+        if self.locked {
+            return Err(TimelineError::TrackLocked);
+        }
+        self.check_overlap(clip.timeline_start, clip.timeline_end(), None)?;
         self.clips.push(clip);
         self.clips.sort_by_key(|c| c.timeline_start);
         Ok(())
@@ -71,6 +98,99 @@ impl Track {
             .position(|c| c.id == id)
             .ok_or(TimelineError::ClipNotFound(id))?;
         Ok(self.clips.remove(idx))
+    }
+
+    /// Move a clip to a new timeline start position, validating no overlaps.
+    pub fn move_clip(&mut self, id: ClipId, new_start: u64) -> Result<(), TimelineError> {
+        if self.locked {
+            return Err(TimelineError::TrackLocked);
+        }
+        let idx = self
+            .clips
+            .iter()
+            .position(|c| c.id == id)
+            .ok_or(TimelineError::ClipNotFound(id))?;
+
+        let duration = self.clips[idx].duration;
+        let new_end = new_start + duration;
+
+        self.check_overlap(new_start, new_end, Some(id))?;
+
+        self.clips[idx].timeline_start = new_start;
+        self.clips.sort_by_key(|c| c.timeline_start);
+        Ok(())
+    }
+
+    /// Split a clip at the given timeline frame. The original clip is shortened,
+    /// and the new right-half clip is inserted into the track.
+    pub fn split_clip(&mut self, id: ClipId, frame: u64) -> Result<ClipId, TimelineError> {
+        if self.locked {
+            return Err(TimelineError::TrackLocked);
+        }
+        let idx = self
+            .clips
+            .iter()
+            .position(|c| c.id == id)
+            .ok_or(TimelineError::ClipNotFound(id))?;
+
+        let right = self.clips[idx].split_at(frame)?;
+        let new_id = right.id;
+        self.clips.push(right);
+        self.clips.sort_by_key(|c| c.timeline_start);
+        Ok(new_id)
+    }
+
+    /// Trim a clip's source offset and duration.
+    pub fn trim_clip(
+        &mut self,
+        id: ClipId,
+        new_offset: u64,
+        new_duration: u64,
+    ) -> Result<(), TimelineError> {
+        if self.locked {
+            return Err(TimelineError::TrackLocked);
+        }
+        let clip = self
+            .clips
+            .iter_mut()
+            .find(|c| c.id == id)
+            .ok_or(TimelineError::ClipNotFound(id))?;
+
+        let new_end = clip.timeline_start + new_duration;
+        // Check overlap with the new duration (exclude self)
+        let start = clip.timeline_start;
+        let self_id = clip.id;
+        // Release mutable borrow before calling check_overlap
+        let _ = clip;
+        self.check_overlap(start, new_end, Some(self_id))?;
+
+        let clip = self
+            .clips
+            .iter_mut()
+            .find(|c| c.id == self_id)
+            .unwrap();
+        clip.trim(new_offset, new_duration)
+    }
+
+    /// Duplicate a clip, placing the copy immediately after the original.
+    pub fn duplicate_clip(&mut self, id: ClipId) -> Result<ClipId, TimelineError> {
+        if self.locked {
+            return Err(TimelineError::TrackLocked);
+        }
+        let clip = self
+            .clips
+            .iter()
+            .find(|c| c.id == id)
+            .ok_or(TimelineError::ClipNotFound(id))?;
+
+        let mut dup = clip.duplicate();
+        dup.timeline_start = clip.timeline_end();
+        let new_id = dup.id;
+
+        self.check_overlap(dup.timeline_start, dup.timeline_start + dup.duration, None)?;
+        self.clips.push(dup);
+        self.clips.sort_by_key(|c| c.timeline_start);
+        Ok(new_id)
     }
 }
 
@@ -115,10 +235,150 @@ impl Timeline {
             .max()
             .unwrap_or(0)
     }
+
+    /// Find a clip by ID across all tracks. Returns the track ID and a reference to the clip.
+    pub fn find_clip(&self, clip_id: ClipId) -> Option<(TrackId, &Clip)> {
+        for track in &self.tracks {
+            if let Some(clip) = track.clips.iter().find(|c| c.id == clip_id) {
+                return Some((track.id, clip));
+            }
+        }
+        None
+    }
+
+    /// Find a clip by ID across all tracks. Returns the track ID and a mutable reference.
+    pub fn find_clip_mut(&mut self, clip_id: ClipId) -> Option<(TrackId, &mut Clip)> {
+        for track in &mut self.tracks {
+            let track_id = track.id;
+            if let Some(clip) = track.clips.iter_mut().find(|c| c.id == clip_id) {
+                return Some((track_id, clip));
+            }
+        }
+        None
+    }
 }
 
 impl Default for Timeline {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::clip::{Clip, ClipKind};
+
+    fn make_clip(start: u64, duration: u64) -> Clip {
+        Clip::new("test", ClipKind::Video, start, duration)
+    }
+
+    #[test]
+    fn overlap_detection_rejects_overlapping_clips() {
+        let mut track = Track::new("V1", TrackKind::Video);
+        track.add_clip(make_clip(0, 30)).unwrap();
+        let result = track.add_clip(make_clip(15, 30));
+        assert!(matches!(result, Err(TimelineError::ClipOverlap(_))));
+    }
+
+    #[test]
+    fn overlap_detection_allows_adjacent_clips() {
+        let mut track = Track::new("V1", TrackKind::Video);
+        track.add_clip(make_clip(0, 30)).unwrap();
+        track.add_clip(make_clip(30, 30)).unwrap();
+        assert_eq!(track.clips.len(), 2);
+    }
+
+    #[test]
+    fn split_clip_offset_math() {
+        let mut track = Track::new("V1", TrackKind::Video);
+        let mut clip = make_clip(10, 60);
+        clip.source_offset = 5;
+        let clip_id = clip.id;
+        track.add_clip(clip).unwrap();
+
+        let new_id = track.split_clip(clip_id, 40).unwrap();
+
+        let left = track.clips.iter().find(|c| c.id == clip_id).unwrap();
+        assert_eq!(left.timeline_start, 10);
+        assert_eq!(left.duration, 30);
+        assert_eq!(left.source_offset, 5);
+
+        let right = track.clips.iter().find(|c| c.id == new_id).unwrap();
+        assert_eq!(right.timeline_start, 40);
+        assert_eq!(right.duration, 30);
+        assert_eq!(right.source_offset, 35); // 5 + 30
+    }
+
+    #[test]
+    fn move_clip_rejects_overlap() {
+        let mut track = Track::new("V1", TrackKind::Video);
+        let clip_a = make_clip(0, 30);
+        let clip_b = make_clip(30, 30);
+        let b_id = clip_b.id;
+        track.add_clip(clip_a).unwrap();
+        track.add_clip(clip_b).unwrap();
+
+        let result = track.move_clip(b_id, 15);
+        assert!(matches!(result, Err(TimelineError::ClipOverlap(_))));
+    }
+
+    #[test]
+    fn move_clip_succeeds_no_overlap() {
+        let mut track = Track::new("V1", TrackKind::Video);
+        let clip = make_clip(0, 30);
+        let id = clip.id;
+        track.add_clip(clip).unwrap();
+
+        track.move_clip(id, 100).unwrap();
+        assert_eq!(track.clips[0].timeline_start, 100);
+    }
+
+    #[test]
+    fn trim_bounds_validated() {
+        use crate::clip::MediaRef;
+
+        let mut clip = make_clip(0, 100);
+        clip.media = Some(MediaRef {
+            path: "test.mp4".into(),
+            duration_frames: 100,
+            width: None,
+            height: None,
+            sample_rate: None,
+            channels: None,
+            info: None,
+        });
+
+        // Valid trim
+        clip.trim(10, 50).unwrap();
+        assert_eq!(clip.source_offset, 10);
+        assert_eq!(clip.duration, 50);
+
+        // Exceeds source duration
+        let result = clip.trim(50, 60);
+        assert!(matches!(result, Err(TimelineError::InvalidTrim { .. })));
+    }
+
+    #[test]
+    fn locked_track_rejects_mutations() {
+        let mut track = Track::new("V1", TrackKind::Video);
+        track.locked = true;
+        let result = track.add_clip(make_clip(0, 30));
+        assert!(matches!(result, Err(TimelineError::TrackLocked)));
+    }
+
+    #[test]
+    fn find_clip_across_tracks() {
+        let mut timeline = Timeline::new();
+        let mut track = Track::new("V1", TrackKind::Video);
+        let clip = make_clip(0, 30);
+        let clip_id = clip.id;
+        let track_id = track.id;
+        track.add_clip(clip).unwrap();
+        timeline.add_track(track);
+
+        let (found_track, found_clip) = timeline.find_clip(clip_id).unwrap();
+        assert_eq!(found_track, track_id);
+        assert_eq!(found_clip.id, clip_id);
     }
 }

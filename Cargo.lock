@@ -4759,10 +4759,12 @@ dependencies = [
  "serde",
  "serde_json",
  "tazama-core",
+ "tazama-media",
  "tazama-storage",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

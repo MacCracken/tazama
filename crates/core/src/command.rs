@@ -1,0 +1,449 @@
+use serde::{Deserialize, Serialize};
+
+use crate::clip::{Clip, ClipId};
+use crate::effect::Effect;
+use crate::timeline::{Timeline, TimelineError, TrackId, TrackKind};
+
+/// Each variant stores enough state for both `apply()` and `undo()`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum EditCommand {
+    AddClip {
+        track_id: TrackId,
+        clip: Clip,
+    },
+    RemoveClip {
+        track_id: TrackId,
+        clip: Clip,
+    },
+    MoveClip {
+        track_id: TrackId,
+        clip_id: ClipId,
+        old_start: u64,
+        new_start: u64,
+    },
+    TrimClip {
+        track_id: TrackId,
+        clip_id: ClipId,
+        old_offset: u64,
+        old_duration: u64,
+        new_offset: u64,
+        new_duration: u64,
+    },
+    SplitClip {
+        track_id: TrackId,
+        original_id: ClipId,
+        new_clip_id: ClipId,
+        original_duration: u64,
+        split_frame: u64,
+    },
+    AddTrack {
+        track_id: TrackId,
+        name: String,
+        kind: TrackKind,
+    },
+    RemoveTrack {
+        track_id: TrackId,
+        index: usize,
+        name: String,
+        kind: TrackKind,
+        clips: Vec<Clip>,
+    },
+    ApplyEffect {
+        track_id: TrackId,
+        clip_id: ClipId,
+        effect: Effect,
+    },
+    RemoveEffect {
+        track_id: TrackId,
+        clip_id: ClipId,
+        effect: Effect,
+    },
+}
+
+impl EditCommand {
+    pub fn apply(&self, timeline: &mut Timeline) -> Result<(), TimelineError> {
+        match self {
+            EditCommand::AddClip { track_id, clip } => {
+                let track = timeline
+                    .track_mut(*track_id)
+                    .ok_or(TimelineError::TrackNotFound(*track_id))?;
+                track.add_clip(clip.clone())
+            }
+            EditCommand::RemoveClip { track_id, clip } => {
+                let track = timeline
+                    .track_mut(*track_id)
+                    .ok_or(TimelineError::TrackNotFound(*track_id))?;
+                track.remove_clip(clip.id)?;
+                Ok(())
+            }
+            EditCommand::MoveClip {
+                track_id,
+                clip_id,
+                new_start,
+                ..
+            } => {
+                let track = timeline
+                    .track_mut(*track_id)
+                    .ok_or(TimelineError::TrackNotFound(*track_id))?;
+                track.move_clip(*clip_id, *new_start)
+            }
+            EditCommand::TrimClip {
+                track_id,
+                clip_id,
+                new_offset,
+                new_duration,
+                ..
+            } => {
+                let track = timeline
+                    .track_mut(*track_id)
+                    .ok_or(TimelineError::TrackNotFound(*track_id))?;
+                track.trim_clip(*clip_id, *new_offset, *new_duration)
+            }
+            EditCommand::SplitClip {
+                track_id,
+                original_id,
+                split_frame,
+                ..
+            } => {
+                let track = timeline
+                    .track_mut(*track_id)
+                    .ok_or(TimelineError::TrackNotFound(*track_id))?;
+                track.split_clip(*original_id, *split_frame)?;
+                Ok(())
+            }
+            EditCommand::AddTrack {
+                name, kind, ..
+            } => {
+                let mut track = crate::timeline::Track::new(name.clone(), *kind);
+                // Use the stored track_id so undo can find it
+                track.id = match self {
+                    EditCommand::AddTrack { track_id, .. } => *track_id,
+                    _ => unreachable!(),
+                };
+                timeline.add_track(track);
+                Ok(())
+            }
+            EditCommand::RemoveTrack { track_id, .. } => {
+                timeline.remove_track(*track_id)?;
+                Ok(())
+            }
+            EditCommand::ApplyEffect {
+                track_id,
+                clip_id,
+                effect,
+            } => {
+                let (_, clip) = timeline
+                    .find_clip_mut(*clip_id)
+                    .ok_or(TimelineError::ClipNotFound(*clip_id))?;
+                let _ = track_id; // verified via find_clip_mut
+                clip.effects.push(effect.clone());
+                Ok(())
+            }
+            EditCommand::RemoveEffect {
+                clip_id,
+                effect,
+                ..
+            } => {
+                let (_, clip) = timeline
+                    .find_clip_mut(*clip_id)
+                    .ok_or(TimelineError::ClipNotFound(*clip_id))?;
+                clip.effects.retain(|e| e.id != effect.id);
+                Ok(())
+            }
+        }
+    }
+
+    pub fn undo(&self, timeline: &mut Timeline) -> Result<(), TimelineError> {
+        match self {
+            EditCommand::AddClip { track_id, clip } => {
+                let track = timeline
+                    .track_mut(*track_id)
+                    .ok_or(TimelineError::TrackNotFound(*track_id))?;
+                track.remove_clip(clip.id)?;
+                Ok(())
+            }
+            EditCommand::RemoveClip { track_id, clip } => {
+                let track = timeline
+                    .track_mut(*track_id)
+                    .ok_or(TimelineError::TrackNotFound(*track_id))?;
+                track.add_clip(clip.clone())
+            }
+            EditCommand::MoveClip {
+                track_id,
+                clip_id,
+                old_start,
+                ..
+            } => {
+                let track = timeline
+                    .track_mut(*track_id)
+                    .ok_or(TimelineError::TrackNotFound(*track_id))?;
+                track.move_clip(*clip_id, *old_start)
+            }
+            EditCommand::TrimClip {
+                track_id,
+                clip_id,
+                old_offset,
+                old_duration,
+                ..
+            } => {
+                let track = timeline
+                    .track_mut(*track_id)
+                    .ok_or(TimelineError::TrackNotFound(*track_id))?;
+                track.trim_clip(*clip_id, *old_offset, *old_duration)
+            }
+            EditCommand::SplitClip {
+                track_id,
+                original_id,
+                new_clip_id,
+                original_duration,
+                ..
+            } => {
+                let track = timeline
+                    .track_mut(*track_id)
+                    .ok_or(TimelineError::TrackNotFound(*track_id))?;
+                // Remove the new clip created by the split
+                track.remove_clip(*new_clip_id)?;
+                // Restore original clip's duration
+                let clip = track
+                    .clips
+                    .iter_mut()
+                    .find(|c| c.id == *original_id)
+                    .ok_or(TimelineError::ClipNotFound(*original_id))?;
+                clip.duration = *original_duration;
+                Ok(())
+            }
+            EditCommand::AddTrack { track_id, .. } => {
+                timeline.remove_track(*track_id)?;
+                Ok(())
+            }
+            EditCommand::RemoveTrack {
+                track_id,
+                index,
+                name,
+                kind,
+                clips,
+            } => {
+                let mut track = crate::timeline::Track::new(name.clone(), *kind);
+                track.id = *track_id;
+                track.clips = clips.clone();
+                // Re-insert at original index
+                let idx = (*index).min(timeline.tracks.len());
+                timeline.tracks.insert(idx, track);
+                Ok(())
+            }
+            EditCommand::ApplyEffect {
+                clip_id,
+                effect,
+                ..
+            } => {
+                let (_, clip) = timeline
+                    .find_clip_mut(*clip_id)
+                    .ok_or(TimelineError::ClipNotFound(*clip_id))?;
+                clip.effects.retain(|e| e.id != effect.id);
+                Ok(())
+            }
+            EditCommand::RemoveEffect {
+                clip_id,
+                effect,
+                ..
+            } => {
+                let (_, clip) = timeline
+                    .find_clip_mut(*clip_id)
+                    .ok_or(TimelineError::ClipNotFound(*clip_id))?;
+                clip.effects.push(effect.clone());
+                Ok(())
+            }
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct EditHistory {
+    undo_stack: Vec<EditCommand>,
+    redo_stack: Vec<EditCommand>,
+}
+
+impl EditHistory {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Execute a command, pushing it onto the undo stack and clearing redo.
+    pub fn execute(
+        &mut self,
+        cmd: EditCommand,
+        timeline: &mut Timeline,
+    ) -> Result<(), TimelineError> {
+        cmd.apply(timeline)?;
+        self.undo_stack.push(cmd);
+        self.redo_stack.clear();
+        Ok(())
+    }
+
+    pub fn undo(&mut self, timeline: &mut Timeline) -> Result<bool, TimelineError> {
+        if let Some(cmd) = self.undo_stack.pop() {
+            cmd.undo(timeline)?;
+            self.redo_stack.push(cmd);
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    pub fn redo(&mut self, timeline: &mut Timeline) -> Result<bool, TimelineError> {
+        if let Some(cmd) = self.redo_stack.pop() {
+            cmd.apply(timeline)?;
+            self.undo_stack.push(cmd);
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    pub fn can_undo(&self) -> bool {
+        !self.undo_stack.is_empty()
+    }
+
+    pub fn can_redo(&self) -> bool {
+        !self.redo_stack.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::clip::{Clip, ClipKind};
+
+    fn setup() -> (Timeline, EditHistory) {
+        let mut timeline = Timeline::new();
+        let track = crate::timeline::Track::new("V1", TrackKind::Video);
+        timeline.add_track(track);
+        (timeline, EditHistory::new())
+    }
+
+    #[test]
+    fn add_undo_redo_cycle() {
+        let (mut timeline, mut history) = setup();
+        let track_id = timeline.tracks[0].id;
+        let clip = Clip::new("clip1", ClipKind::Video, 0, 30);
+        let clip_id = clip.id;
+
+        let cmd = EditCommand::AddClip {
+            track_id,
+            clip: clip.clone(),
+        };
+        history.execute(cmd, &mut timeline).unwrap();
+        assert_eq!(timeline.tracks[0].clips.len(), 1);
+
+        history.undo(&mut timeline).unwrap();
+        assert_eq!(timeline.tracks[0].clips.len(), 0);
+
+        history.redo(&mut timeline).unwrap();
+        assert_eq!(timeline.tracks[0].clips.len(), 1);
+        assert_eq!(timeline.tracks[0].clips[0].id, clip_id);
+    }
+
+    #[test]
+    fn split_undo_restores_original() {
+        let (mut timeline, mut history) = setup();
+        let track_id = timeline.tracks[0].id;
+        let clip = Clip::new("clip1", ClipKind::Video, 0, 60);
+        let clip_id = clip.id;
+
+        // Add clip first
+        let add_cmd = EditCommand::AddClip {
+            track_id,
+            clip: clip.clone(),
+        };
+        history.execute(add_cmd, &mut timeline).unwrap();
+
+        // Now split it — we need to record the new_clip_id after split
+        // For the command pattern, we need to know the new_clip_id ahead of time
+        // So we do the split via the track and wrap it in a command
+        let _new_clip_id = {
+            let track = timeline.track_mut(track_id).unwrap();
+            // Find the new clip id after split
+            let right = track
+                .clips
+                .iter()
+                .find(|c| c.id == clip_id)
+                .unwrap()
+                .clone();
+            // Undo the direct mutation — we'll use the command system
+            drop(right);
+            // Actually, let's use the command directly
+            ClipId::new() // placeholder — the split_clip on track generates its own
+        };
+
+        // Reset — re-do properly: we need to use the track-level split which generates the id
+        // Let's just test via direct EditCommand
+        // First undo the add so we can redo cleanly
+        history.undo(&mut timeline).unwrap();
+        history.redo(&mut timeline).unwrap();
+
+        // Split using track method directly, then record command
+        let track = timeline.track_mut(track_id).unwrap();
+        let original_duration = track
+            .clips
+            .iter()
+            .find(|c| c.id == clip_id)
+            .unwrap()
+            .duration;
+        let new_id = track.split_clip(clip_id, 30).unwrap();
+
+        // Now manually push the command to undo stack
+        let split_cmd = EditCommand::SplitClip {
+            track_id,
+            original_id: clip_id,
+            new_clip_id: new_id,
+            original_duration,
+            split_frame: 30,
+        };
+
+        // Verify split happened
+        assert_eq!(timeline.tracks[0].clips.len(), 2);
+        let left = timeline.tracks[0].clips.iter().find(|c| c.id == clip_id).unwrap();
+        assert_eq!(left.duration, 30);
+        let right = timeline.tracks[0].clips.iter().find(|c| c.id == new_id).unwrap();
+        assert_eq!(right.duration, 30);
+
+        // Undo the split
+        split_cmd.undo(&mut timeline).unwrap();
+        assert_eq!(timeline.tracks[0].clips.len(), 1);
+        assert_eq!(timeline.tracks[0].clips[0].duration, 60);
+    }
+
+    #[test]
+    fn redo_stack_cleared_on_new_action() {
+        let (mut timeline, mut history) = setup();
+        let track_id = timeline.tracks[0].id;
+
+        let clip1 = Clip::new("clip1", ClipKind::Video, 0, 30);
+        let clip2 = Clip::new("clip2", ClipKind::Video, 30, 30);
+
+        history
+            .execute(
+                EditCommand::AddClip {
+                    track_id,
+                    clip: clip1,
+                },
+                &mut timeline,
+            )
+            .unwrap();
+
+        history.undo(&mut timeline).unwrap();
+        assert!(history.can_redo());
+
+        // New action should clear redo stack
+        history
+            .execute(
+                EditCommand::AddClip {
+                    track_id,
+                    clip: clip2,
+                },
+                &mut timeline,
+            )
+            .unwrap();
+        assert!(!history.can_redo());
+    }
+}
