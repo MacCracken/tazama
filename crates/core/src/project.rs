@@ -86,3 +86,52 @@ impl Project {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn frame_rate_fps_30() {
+        let fr = FrameRate::new(30, 1);
+        assert!((fr.fps() - 30.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn frame_rate_fps_29_97() {
+        let fr = FrameRate::new(30000, 1001);
+        assert!((fr.fps() - 29.97002997).abs() < 0.001);
+    }
+
+    #[test]
+    #[should_panic(expected = "frame rate denominator must be > 0")]
+    fn frame_rate_zero_denominator_panics() {
+        FrameRate::new(30, 0);
+    }
+
+    #[test]
+    fn default_settings_are_1080p_30fps() {
+        let s = ProjectSettings::default();
+        assert_eq!(s.width, 1920);
+        assert_eq!(s.height, 1080);
+        assert_eq!(s.frame_rate.numerator, 30);
+        assert_eq!(s.frame_rate.denominator, 1);
+        assert_eq!(s.sample_rate, 48000);
+        assert_eq!(s.channels, 2);
+    }
+
+    #[test]
+    fn project_new_has_empty_timeline() {
+        let p = Project::new("test", ProjectSettings::default());
+        assert_eq!(p.name, "test");
+        assert!(p.timeline.tracks.is_empty());
+        assert!(p.timeline.markers.is_empty());
+    }
+
+    #[test]
+    fn project_ids_are_unique() {
+        let p1 = Project::new("a", ProjectSettings::default());
+        let p2 = Project::new("b", ProjectSettings::default());
+        assert_ne!(p1.id, p2.id);
+    }
+}

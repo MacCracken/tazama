@@ -566,4 +566,127 @@ mod tests {
 
         assert!(timeline.topmost_video_clip_at(0).is_none());
     }
+
+    // --- Marker tests ---
+
+    #[test]
+    fn add_marker_sorted_by_frame() {
+        let mut timeline = Timeline::new();
+        let m1 = crate::marker::Marker::new("end", 100, crate::marker::MarkerColor::Red);
+        let m2 = crate::marker::Marker::new("start", 10, crate::marker::MarkerColor::Blue);
+        timeline.add_marker(m1);
+        timeline.add_marker(m2);
+        assert_eq!(timeline.markers.len(), 2);
+        assert_eq!(timeline.markers[0].frame, 10);
+        assert_eq!(timeline.markers[1].frame, 100);
+    }
+
+    #[test]
+    fn remove_marker_by_id() {
+        let mut timeline = Timeline::new();
+        let m = crate::marker::Marker::new("test", 50, crate::marker::MarkerColor::Green);
+        let mid = m.id;
+        timeline.add_marker(m);
+        assert_eq!(timeline.markers.len(), 1);
+        let removed = timeline.remove_marker(mid).unwrap();
+        assert_eq!(removed.name, "test");
+        assert_eq!(timeline.markers.len(), 0);
+    }
+
+    #[test]
+    fn remove_nonexistent_marker_returns_none() {
+        let mut timeline = Timeline::new();
+        assert!(
+            timeline
+                .remove_marker(crate::marker::MarkerId::new())
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn markers_in_range_filters_correctly() {
+        let mut timeline = Timeline::new();
+        timeline.add_marker(crate::marker::Marker::new(
+            "a",
+            5,
+            crate::marker::MarkerColor::Red,
+        ));
+        timeline.add_marker(crate::marker::Marker::new(
+            "b",
+            10,
+            crate::marker::MarkerColor::Red,
+        ));
+        timeline.add_marker(crate::marker::Marker::new(
+            "c",
+            15,
+            crate::marker::MarkerColor::Red,
+        ));
+        timeline.add_marker(crate::marker::Marker::new(
+            "d",
+            20,
+            crate::marker::MarkerColor::Red,
+        ));
+
+        let range = timeline.markers_in_range(10, 20);
+        assert_eq!(range.len(), 2);
+        assert_eq!(range[0].name, "b");
+        assert_eq!(range[1].name, "c");
+    }
+
+    // --- Duration tests ---
+
+    #[test]
+    fn duration_frames_empty_timeline() {
+        let timeline = Timeline::new();
+        assert_eq!(timeline.duration_frames(), 0);
+    }
+
+    #[test]
+    fn duration_frames_multiple_tracks() {
+        let mut timeline = Timeline::new();
+        timeline.add_track(Track::new("V1", TrackKind::Video));
+        timeline.add_track(Track::new("A1", TrackKind::Audio));
+        timeline.tracks[0].add_clip(make_clip(0, 100)).unwrap();
+        timeline.tracks[1]
+            .add_clip(Clip::new("audio", ClipKind::Audio, 50, 200))
+            .unwrap();
+        // Max end is 50 + 200 = 250
+        assert_eq!(timeline.duration_frames(), 250);
+    }
+
+    // --- Clip duplicate tests ---
+
+    #[test]
+    fn duplicate_clip_gets_new_id() {
+        let clip = make_clip(10, 50);
+        let dup = clip.duplicate();
+        assert_ne!(clip.id, dup.id);
+        assert_eq!(clip.timeline_start, dup.timeline_start);
+        assert_eq!(clip.duration, dup.duration);
+        assert_eq!(clip.name, dup.name);
+    }
+
+    // --- Audible tracks tests ---
+
+    #[test]
+    fn audible_tracks_excludes_muted() {
+        let mut timeline = Timeline::new();
+        timeline.add_track(Track::new("A1", TrackKind::Audio));
+        timeline.add_track(Track::new("A2", TrackKind::Audio));
+        timeline.tracks[0].muted = true;
+        let audible = timeline.audible_tracks();
+        assert_eq!(audible.len(), 1);
+        assert_eq!(audible[0].name, "A2");
+    }
+
+    #[test]
+    fn audible_tracks_solo_mode() {
+        let mut timeline = Timeline::new();
+        timeline.add_track(Track::new("A1", TrackKind::Audio));
+        timeline.add_track(Track::new("A2", TrackKind::Audio));
+        timeline.tracks[1].solo = true;
+        let audible = timeline.audible_tracks();
+        assert_eq!(audible.len(), 1);
+        assert_eq!(audible[0].name, "A2");
+    }
 }

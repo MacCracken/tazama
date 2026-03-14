@@ -156,9 +156,8 @@ impl Drop for GpuContext {
             self.device.destroy_command_pool(self.command_pool, None);
             // Drop allocator before device — take() removes it from the Option
             // so it is dropped here, before the device is destroyed.
-            if let Ok(allocator) = self.allocator.get_mut() {
-                drop(allocator.take());
-            }
+            let allocator = self.allocator.get_mut().unwrap_or_else(|e| e.into_inner());
+            drop(allocator.take());
             self.device.destroy_device(None);
             self.instance.destroy_instance(None);
         }

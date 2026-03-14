@@ -904,4 +904,127 @@ mod tests {
     fn test_frame_buffer_size() {
         assert_eq!(GpuBuffer::frame_buffer_size(1920, 1080), 1920 * 1080 * 4);
     }
+
+    #[test]
+    fn test_frame_buffer_size_small() {
+        assert_eq!(GpuBuffer::frame_buffer_size(1, 1), 4);
+        assert_eq!(GpuBuffer::frame_buffer_size(0, 0), 0);
+    }
+
+    #[test]
+    fn test_frame_index_to_ns_zero() {
+        let settings = ProjectSettings {
+            width: 1920,
+            height: 1080,
+            frame_rate: FrameRate {
+                numerator: 30,
+                denominator: 1,
+            },
+            sample_rate: 48000,
+            channels: 2,
+        };
+        assert_eq!(frame_index_to_ns(0, &settings), 0);
+    }
+
+    #[test]
+    fn test_frame_index_to_ns_fractional_fps() {
+        let settings = ProjectSettings {
+            width: 1920,
+            height: 1080,
+            frame_rate: FrameRate {
+                numerator: 24000,
+                denominator: 1001,
+            },
+            sample_rate: 48000,
+            channels: 2,
+        };
+        // 24 frames at 23.976fps ≈ 1.001 seconds
+        let ns = frame_index_to_ns(24, &settings);
+        // Should be approximately 1_001_000_000 ns
+        assert!((ns as f64 - 1_001_000_000.0).abs() < 1_000_000.0);
+    }
+
+    #[test]
+    fn test_collect_clips_with_solo_track() {
+        let mut timeline = Timeline::new();
+        timeline.add_track(Track::new("V1", TrackKind::Video));
+        timeline.add_track(Track::new("V2", TrackKind::Video));
+
+        let clip1 = Clip {
+            id: ClipId::new(),
+            name: "c1".to_string(),
+            kind: ClipKind::Video,
+            media: Some(MediaRef {
+                path: "/tmp/a.mp4".to_string(),
+                duration_frames: 100,
+                width: Some(1920),
+                height: Some(1080),
+                sample_rate: None,
+                channels: None,
+                info: None,
+            }),
+            timeline_start: 0,
+            duration: 100,
+            source_offset: 0,
+            effects: vec![],
+            opacity: 1.0,
+            volume: 1.0,
+        };
+        let clip2 = Clip {
+            id: ClipId::new(),
+            name: "c2".to_string(),
+            kind: ClipKind::Video,
+            media: Some(MediaRef {
+                path: "/tmp/b.mp4".to_string(),
+                duration_frames: 100,
+                width: Some(1920),
+                height: Some(1080),
+                sample_rate: None,
+                channels: None,
+                info: None,
+            }),
+            timeline_start: 0,
+            duration: 100,
+            source_offset: 0,
+            effects: vec![],
+            opacity: 1.0,
+            volume: 1.0,
+        };
+
+        timeline.tracks[0].add_clip(clip1).unwrap();
+        timeline.tracks[1].add_clip(clip2).unwrap();
+
+        // Without solo: both clips active
+        let clips = collect_active_clips(&timeline, 50);
+        assert_eq!(clips.len(), 2);
+
+        // Solo V1: only V1 clip
+        timeline.tracks[0].solo = true;
+        let clips = collect_active_clips(&timeline, 50);
+        assert_eq!(clips.len(), 1);
+        assert_eq!(clips[0].media_path.as_deref(), Some("/tmp/a.mp4"));
+    }
+
+    #[test]
+    fn test_collect_clips_invisible_track_excluded() {
+        let mut timeline = Timeline::new();
+        timeline.add_track(Track::new("V1", TrackKind::Video));
+        let clip = Clip {
+            id: ClipId::new(),
+            name: "c1".to_string(),
+            kind: ClipKind::Video,
+            media: None,
+            timeline_start: 0,
+            duration: 100,
+            source_offset: 0,
+            effects: vec![],
+            opacity: 1.0,
+            volume: 1.0,
+        };
+        timeline.tracks[0].add_clip(clip).unwrap();
+        timeline.tracks[0].visible = false;
+
+        let clips = collect_active_clips(&timeline, 50);
+        assert_eq!(clips.len(), 0);
+    }
 }

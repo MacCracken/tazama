@@ -437,6 +437,79 @@ mod tests {
     }
 
     #[test]
+    fn move_clip_undo() {
+        let (mut timeline, mut history) = setup();
+        let track_id = timeline.tracks[0].id;
+        let clip = Clip::new("clip1", ClipKind::Video, 0, 30);
+        let clip_id = clip.id;
+        history
+            .execute(EditCommand::AddClip { track_id, clip }, &mut timeline)
+            .unwrap();
+
+        let cmd = EditCommand::MoveClip {
+            track_id,
+            clip_id,
+            old_start: 0,
+            new_start: 50,
+        };
+        history.execute(cmd, &mut timeline).unwrap();
+        assert_eq!(timeline.tracks[0].clips[0].timeline_start, 50);
+
+        history.undo(&mut timeline).unwrap();
+        assert_eq!(timeline.tracks[0].clips[0].timeline_start, 0);
+    }
+
+    #[test]
+    fn add_and_remove_track_undo() {
+        let (mut timeline, mut history) = setup();
+        let track_id = crate::timeline::TrackId::new();
+        let cmd = EditCommand::AddTrack {
+            track_id,
+            name: "A1".to_string(),
+            kind: TrackKind::Audio,
+        };
+        history.execute(cmd, &mut timeline).unwrap();
+        assert_eq!(timeline.tracks.len(), 2);
+
+        history.undo(&mut timeline).unwrap();
+        assert_eq!(timeline.tracks.len(), 1);
+        assert!(timeline.track(track_id).is_none());
+    }
+
+    #[test]
+    fn add_marker_undo() {
+        let (mut timeline, mut history) = setup();
+        let marker = crate::marker::Marker::new("m1", 10, crate::marker::MarkerColor::Blue);
+        let marker_id = marker.id;
+        let cmd = EditCommand::AddMarker { marker };
+        history.execute(cmd, &mut timeline).unwrap();
+        assert_eq!(timeline.markers.len(), 1);
+
+        history.undo(&mut timeline).unwrap();
+        assert_eq!(timeline.markers.len(), 0);
+
+        history.redo(&mut timeline).unwrap();
+        assert_eq!(timeline.markers.len(), 1);
+        assert_eq!(timeline.markers[0].id, marker_id);
+    }
+
+    #[test]
+    fn undo_empty_history_returns_false() {
+        let (mut timeline, mut history) = setup();
+        assert!(!history.can_undo());
+        let result = history.undo(&mut timeline).unwrap();
+        assert!(!result);
+    }
+
+    #[test]
+    fn redo_empty_history_returns_false() {
+        let (mut timeline, mut history) = setup();
+        assert!(!history.can_redo());
+        let result = history.redo(&mut timeline).unwrap();
+        assert!(!result);
+    }
+
+    #[test]
     fn redo_stack_cleared_on_new_action() {
         let (mut timeline, mut history) = setup();
         let track_id = timeline.tracks[0].id;

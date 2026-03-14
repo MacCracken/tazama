@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useEffect } from "react";
 import type { Clip } from "../../../types";
 import { useProjectStore } from "../../../stores/projectStore";
 import { useUIStore } from "../../../stores/uiStore";
@@ -8,6 +8,22 @@ export function useDragClip(trackId: string, clip: Clip, locked: boolean) {
   const zoom = useUIStore((s) => s.zoom);
   const startX = useRef(0);
   const startFrame = useRef(0);
+  const handlersRef = useRef<{
+    move: ((e: MouseEvent) => void) | null;
+    up: (() => void) | null;
+  }>({ move: null, up: null });
+
+  // Clean up drag listeners on unmount
+  useEffect(() => {
+    return () => {
+      if (handlersRef.current.move) {
+        document.removeEventListener("mousemove", handlersRef.current.move);
+      }
+      if (handlersRef.current.up) {
+        document.removeEventListener("mouseup", handlersRef.current.up);
+      }
+    };
+  }, []);
 
   const onMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -26,8 +42,10 @@ export function useDragClip(trackId: string, clip: Clip, locked: boolean) {
       const handleUp = () => {
         document.removeEventListener("mousemove", handleMove);
         document.removeEventListener("mouseup", handleUp);
+        handlersRef.current = { move: null, up: null };
       };
 
+      handlersRef.current = { move: handleMove, up: handleUp };
       document.addEventListener("mousemove", handleMove);
       document.addEventListener("mouseup", handleUp);
     },

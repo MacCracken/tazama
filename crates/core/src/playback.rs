@@ -95,4 +95,42 @@ mod tests {
         assert_eq!(pos.frame, 10);
         assert_eq!(pos.state, PlaybackState::Playing);
     }
+
+    #[test]
+    fn advance_does_not_stop_when_looping() {
+        let mut pos = PlaybackPosition::new();
+        pos.state = PlaybackState::Playing;
+        pos.loop_region = Some((0, 5));
+        pos.frame = 4;
+        pos.advance(5); // at loop end
+        assert_eq!(pos.frame, 0);
+        assert_eq!(pos.state, PlaybackState::Playing); // stays playing
+    }
+
+    #[test]
+    fn advance_stops_at_timeline_end_without_loop() {
+        let mut pos = PlaybackPosition::new();
+        pos.state = PlaybackState::Playing;
+        pos.frame = 0;
+        pos.advance(1); // duration=1, after advance frame=1 >= 1
+        assert_eq!(pos.frame, 0);
+        assert_eq!(pos.state, PlaybackState::Stopped);
+    }
+
+    #[test]
+    fn default_is_stopped_at_zero() {
+        let pos = PlaybackPosition::default();
+        assert_eq!(pos.frame, 0);
+        assert_eq!(pos.state, PlaybackState::Stopped);
+        assert!(pos.loop_region.is_none());
+    }
+
+    #[test]
+    fn paused_does_not_advance() {
+        let mut pos = PlaybackPosition::new();
+        pos.state = PlaybackState::Paused;
+        pos.frame = 10;
+        pos.advance(100);
+        assert_eq!(pos.frame, 10);
+    }
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import type { ExportProgress as ExportProgressType } from "../../types";
 
@@ -9,15 +9,24 @@ export function ExportProgress() {
     done: false,
   });
 
+  const unlistenRef = useRef<(() => void) | null>(null);
+  const mountedRef = useRef(true);
+
   useEffect(() => {
-    let unlistenFn: (() => void) | null = null;
+    mountedRef.current = true;
     listen<ExportProgressType>("export-progress", (event) => {
-      setProgress(event.payload);
+      if (mountedRef.current) setProgress(event.payload);
     }).then((fn) => {
-      unlistenFn = fn;
+      if (mountedRef.current) {
+        unlistenRef.current = fn;
+      } else {
+        // Component already unmounted before listener was registered — clean up immediately
+        fn();
+      }
     });
     return () => {
-      unlistenFn?.();
+      mountedRef.current = false;
+      unlistenRef.current?.();
     };
   }, []);
 

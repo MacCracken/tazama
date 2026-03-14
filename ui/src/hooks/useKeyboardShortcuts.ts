@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { useUIStore } from "../stores/uiStore";
 import { useHistoryStore } from "../stores/historyStore";
@@ -135,7 +136,11 @@ export function useKeyboardShortcuts() {
         }
         if (e.key === "o") {
           e.preventDefault();
-          useProjectStore.getState().openProject();
+          open({
+            filters: [{ name: "Tazama Project", extensions: ["tazama"] }],
+          }).then((selected) => {
+            if (selected) useProjectStore.getState().openProject(selected);
+          });
           return;
         }
       }

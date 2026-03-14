@@ -42,7 +42,7 @@ pub fn mix_timeline_audio(
     tx: mpsc::Sender<AudioBuffer>,
 ) -> Result<(), MediaPipelineError> {
     let fps = frame_rate.fps();
-    if fps <= 0.0 {
+    if fps <= 0.0 || sample_rate == 0 || channels == 0 {
         return Ok(());
     }
 
@@ -99,6 +99,10 @@ pub fn mix_timeline_audio(
             let start = (source_offset_samples as usize).min(all_samples.len());
             let end =
                 ((source_offset_samples + clip_duration_samples) as usize).min(all_samples.len());
+            if start >= end {
+                debug!("clip source region empty after trim: start={start} end={end}");
+                continue;
+            }
             let trimmed = all_samples[start..end].to_vec();
 
             // Timeline position in samples
