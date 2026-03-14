@@ -19,8 +19,8 @@ impl McpProcess {
             .spawn()
             .expect("failed to start tazama-mcp");
 
-        let stdout = child.stdout.as_ref().unwrap();
-        // We need to own the stdout, so reconstruct
+        // Verify stdout is available, then take ownership
+        assert!(child.stdout.is_some(), "stdout not captured");
         let mut child = child;
         let stdout = child.stdout.take().unwrap();
         let reader = BufReader::new(stdout);
