@@ -17,10 +17,19 @@ impl ExportPipeline {
     /// Returns a watch receiver for progress updates.
     pub fn run(
         config: ExportConfig,
+        video_rx: mpsc::Receiver<VideoFrame>,
+        audio_rx: mpsc::Receiver<AudioBuffer>,
+    ) -> Result<watch::Receiver<ExportProgress>, MediaPipelineError> {
+        Self::run_with_total(config, video_rx, audio_rx, 0)
+    }
+
+    /// Run an export with a known total frame count for progress tracking.
+    pub fn run_with_total(
+        config: ExportConfig,
         mut video_rx: mpsc::Receiver<VideoFrame>,
         mut audio_rx: mpsc::Receiver<AudioBuffer>,
+        total_frames: u64,
     ) -> Result<watch::Receiver<ExportProgress>, MediaPipelineError> {
-        let total_frames = config.frame_rate.0 as u64; // placeholder; caller should set properly
         let (progress_tx, progress_rx) = watch::channel(ExportProgress {
             frames_written: 0,
             total_frames,
@@ -29,7 +38,13 @@ impl ExportPipeline {
 
         let config_clone = config.clone();
         task::spawn_blocking(move || {
-            if let Err(e) = run_export(config_clone, &mut video_rx, &mut audio_rx, &progress_tx) {
+            if let Err(e) = run_export(
+                config_clone,
+                &mut video_rx,
+                &mut audio_rx,
+                &progress_tx,
+                total_frames,
+            ) {
                 error!("export pipeline error: {e}");
             }
             let _ = progress_tx.send(ExportProgress {
@@ -48,6 +63,7 @@ fn run_export(
     video_rx: &mut mpsc::Receiver<VideoFrame>,
     audio_rx: &mut mpsc::Receiver<AudioBuffer>,
     progress_tx: &watch::Sender<ExportProgress>,
+    total_frames: u64,
 ) -> Result<(), MediaPipelineError> {
     let pipeline = gstreamer::Pipeline::new();
 
@@ -197,7 +213,7 @@ fn run_export(
         frames_written += 1;
         let _ = progress_tx.send(ExportProgress {
             frames_written,
-            total_frames: 0,
+            total_frames,
             done: false,
         });
     }

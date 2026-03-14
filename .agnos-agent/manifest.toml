@@ -51,6 +51,17 @@ examples = [
 ]
 
 [[intents]]
+name = "add marker"
+description = "Add a named marker to the timeline at a specific frame"
+tools = ["tazama_add_marker"]
+examples = [
+    "add a marker here",
+    "mark this frame as important",
+    "put a red marker at frame 100",
+    "add chapter markers",
+]
+
+[[intents]]
 name = "show timeline"
 description = "Display the current timeline state with all tracks and clips"
 tools = ["tazama_get_timeline"]

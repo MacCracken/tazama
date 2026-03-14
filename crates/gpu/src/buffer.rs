@@ -78,9 +78,9 @@ impl GpuBuffer {
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .as_mut()
-            {
-                let _ = alloc.free(allocation);
-            }
+        {
+            let _ = alloc.free(allocation);
+        }
         unsafe {
             ctx.device().destroy_buffer(self.buffer, None);
         }

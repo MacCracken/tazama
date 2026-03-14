@@ -9,6 +9,15 @@ use tracing::{debug, error};
 use super::AudioBuffer;
 use crate::error::MediaPipelineError;
 
+/// RAII guard that sets a GStreamer pipeline to Null on drop.
+struct PipelineGuard(gstreamer::Pipeline);
+
+impl Drop for PipelineGuard {
+    fn drop(&mut self) {
+        let _ = self.0.set_state(gstreamer::State::Null);
+    }
+}
+
 /// Decodes audio from a media file into interleaved f32 buffers.
 pub struct AudioDecoder;
 
@@ -93,7 +102,9 @@ fn build_audio_pipeline(
         if let Some(s) = structure
             && s.name().starts_with("audio/")
         {
-            let sink_pad = audioconvert.static_pad("sink").unwrap();
+            let Some(sink_pad) = audioconvert.static_pad("sink") else {
+                return;
+            };
             if !sink_pad.is_linked() {
                 let _ = src_pad.link(&sink_pad);
             }
@@ -112,6 +123,7 @@ fn build_audio_pipeline(
 
 fn decode_audio(path: &Path, tx: mpsc::Sender<AudioBuffer>) -> Result<(), MediaPipelineError> {
     let (pipeline, appsink) = build_audio_pipeline(path, 48000)?;
+    let _guard = PipelineGuard(pipeline.clone());
 
     pipeline
         .set_state(gstreamer::State::Playing)
@@ -131,10 +143,7 @@ fn decode_audio(path: &Path, tx: mpsc::Sender<AudioBuffer>) -> Result<(), MediaP
         }
     }
 
-    pipeline
-        .set_state(gstreamer::State::Null)
-        .map_err(|e| MediaPipelineError::StateChange(e.to_string()))?;
-
+    // Guard handles pipeline cleanup on all exit paths
     Ok(())
 }
 
@@ -149,8 +158,9 @@ fn sample_to_audio_buffer(sample: &gstreamer::Sample) -> Option<AudioBuffer> {
     let map = buffer.map_readable().ok()?;
     let byte_slice = map.as_slice();
 
-    // f32 samples from raw bytes
-    let samples: Vec<f32> = byte_slice
+    // Validate alignment — f32 samples require 4-byte aligned data
+    let aligned_len = byte_slice.len() - (byte_slice.len() % 4);
+    let samples: Vec<f32> = byte_slice[..aligned_len]
         .chunks_exact(4)
         .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
         .collect();

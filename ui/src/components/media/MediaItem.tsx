@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import { useProjectStore } from "../../stores/projectStore";
+import { useUIStore } from "../../stores/uiStore";
 import type { Clip, ClipKind } from "../../types";
 
 interface MediaAsset {
@@ -28,7 +29,10 @@ export function MediaItem({ asset }: MediaItemProps) {
     if (!project) return;
     const tracks = project.timeline.tracks;
     const videoTrack = tracks.find((t) => t.kind === "Video");
-    if (!videoTrack) return;
+    if (!videoTrack) {
+      useUIStore.getState().showToast("No video track found. Add a track first.", "error");
+      return;
+    }
 
     const clip: Clip = {
       id: crypto.randomUUID(),

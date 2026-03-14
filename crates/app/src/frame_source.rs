@@ -29,17 +29,19 @@ impl FrameSource for MediaFrameSource {
     fn get_frame(&self, media_path: &str, frame_index: u64) -> Result<GpuFrame, GpuError> {
         // Check cache
         {
-            let cache = self.cache.lock().unwrap();
+            let cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
             if let Some((ref path, idx, ref frame)) = *cache
-                && path == media_path && idx == frame_index {
-                    return Ok(GpuFrame {
-                        frame_index: frame.frame_index,
-                        width: frame.width,
-                        height: frame.height,
-                        data: frame.data.clone(),
-                        timestamp_ns: frame.timestamp_ns,
-                    });
-                }
+                && path == media_path
+                && idx == frame_index
+            {
+                return Ok(GpuFrame {
+                    frame_index: frame.frame_index,
+                    width: frame.width,
+                    height: frame.height,
+                    data: frame.data.clone(),
+                    timestamp_ns: frame.timestamp_ns,
+                });
+            }
         }
 
         let path = Path::new(media_path);
@@ -62,7 +64,7 @@ impl FrameSource for MediaFrameSource {
 
         // Update cache
         {
-            let mut cache = self.cache.lock().unwrap();
+            let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
             *cache = Some((
                 media_path.to_string(),
                 frame_index,

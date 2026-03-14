@@ -49,7 +49,7 @@ impl AudioPreview {
         let stream = device.build_output_stream(
             &config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                let mut st = cb_state.lock().unwrap();
+                let mut st = cb_state.lock().unwrap_or_else(|e| e.into_inner());
                 if !st.playing {
                     data.fill(0.0);
                     return;
@@ -78,20 +78,20 @@ impl AudioPreview {
 
     /// Feed decoded audio samples into the ring buffer.
     pub fn feed(&self, audio: &AudioBuffer) {
-        let mut st = self.state.lock().unwrap();
+        let mut st = self.state.lock().unwrap_or_else(|e| e.into_inner());
         st.buffer.extend(audio.samples.iter());
     }
 
     /// Seek to a position, clearing the buffer.
     pub fn seek(&self, position_ns: u64) {
-        let mut st = self.state.lock().unwrap();
+        let mut st = self.state.lock().unwrap_or_else(|e| e.into_inner());
         st.buffer.clear();
         st.position_ns = position_ns;
     }
 
     /// Set playing state.
     pub fn set_playing(&self, playing: bool) {
-        let mut st = self.state.lock().unwrap();
+        let mut st = self.state.lock().unwrap_or_else(|e| e.into_inner());
         st.playing = playing;
         if !playing {
             st.buffer.clear();
@@ -100,6 +100,9 @@ impl AudioPreview {
 
     /// Get the current playback position in nanoseconds.
     pub fn position_ns(&self) -> u64 {
-        self.state.lock().unwrap().position_ns
+        self.state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .position_ns
     }
 }

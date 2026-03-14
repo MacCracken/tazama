@@ -1,6 +1,7 @@
 pub mod decode;
 pub mod error;
 pub mod export;
+pub mod mix;
 pub mod playback;
 pub mod probe;
 pub mod thumbnail;

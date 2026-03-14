@@ -10,11 +10,14 @@ export function ExportProgress() {
   });
 
   useEffect(() => {
-    const unlisten = listen<ExportProgressType>("export-progress", (event) => {
+    let unlistenFn: (() => void) | null = null;
+    listen<ExportProgressType>("export-progress", (event) => {
       setProgress(event.payload);
+    }).then((fn) => {
+      unlistenFn = fn;
     });
     return () => {
-      unlisten.then((fn) => fn());
+      unlistenFn?.();
     };
   }, []);
 

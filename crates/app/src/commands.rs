@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use tazama_core::{ClipKind, MediaInfo, Project, ProjectSettings, TrackKind};
+use tazama_core::{MediaInfo, Project, ProjectSettings};
 use tazama_media::ExportConfig;
 
 #[tauri::command]
@@ -87,9 +87,13 @@ pub async fn export_project(
     let (audio_tx, audio_rx) = tokio::sync::mpsc::channel(64);
 
     // Start export pipeline in background
-    let mut progress_rx =
-        tazama_media::export::pipeline::ExportPipeline::run(config, video_rx, audio_rx)
-            .map_err(|e| e.to_string())?;
+    let mut progress_rx = tazama_media::export::pipeline::ExportPipeline::run_with_total(
+        config,
+        video_rx,
+        audio_rx,
+        total_frames,
+    )
+    .map_err(|e| e.to_string())?;
 
     let settings = project.settings.clone();
     let timeline = project.timeline.clone();
@@ -128,43 +132,20 @@ pub async fn export_project(
         Ok(())
     });
 
-    // Decode and feed audio from all audio clips
+    // Mix all audio tracks together and feed to the export pipeline
     let audio_timeline = project.timeline.clone();
-    let audio_settings = project.settings.clone();
+    let audio_frame_rate = project.settings.frame_rate;
+    let audio_sample_rate = project.settings.sample_rate;
+    let audio_channels = project.settings.channels;
     let audio_handle = tokio::task::spawn_blocking(move || -> Result<(), String> {
-        for track in &audio_timeline.tracks {
-            if track.muted || track.kind == TrackKind::Video {
-                continue;
-            }
-            for clip in &track.clips {
-                if clip.kind != ClipKind::Audio && clip.kind != ClipKind::Video {
-                    continue;
-                }
-                let media_path = match &clip.media {
-                    Some(m) => &m.path,
-                    None => continue,
-                };
-
-                let mut rx = tazama_media::decode::audio::AudioDecoder::decode(
-                    std::path::Path::new(media_path),
-                )
-                .map_err(|e| format!("audio decode: {e}"))?;
-
-                // Compute the timeline timestamp offset for this clip
-                let fps = audio_settings.frame_rate.numerator as f64
-                    / audio_settings.frame_rate.denominator as f64;
-                let clip_start_ns = (clip.timeline_start as f64 / fps * 1_000_000_000.0) as u64;
-
-                while let Some(mut buf) = rx.blocking_recv() {
-                    buf.timestamp_ns += clip_start_ns;
-                    if audio_tx.blocking_send(buf).is_err() {
-                        return Ok(());
-                    }
-                }
-            }
-        }
-        // audio_tx drops here, signaling EOS
-        Ok(())
+        tazama_media::mix::mix_timeline_audio(
+            &audio_timeline,
+            &audio_frame_rate,
+            audio_sample_rate,
+            audio_channels,
+            audio_tx,
+        )
+        .map_err(|e| format!("audio mix: {e}"))
     });
 
     // Wait for both feed tasks

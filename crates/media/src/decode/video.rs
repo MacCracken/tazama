@@ -10,6 +10,15 @@ use tracing::{debug, error};
 use super::{DecoderConfig, FrameRange, VideoFrame};
 use crate::error::MediaPipelineError;
 
+/// RAII guard that sets a GStreamer pipeline to Null on drop.
+struct PipelineGuard(gstreamer::Pipeline);
+
+impl Drop for PipelineGuard {
+    fn drop(&mut self) {
+        let _ = self.0.set_state(gstreamer::State::Null);
+    }
+}
+
 /// Decodes video frames from a media file.
 pub struct VideoDecoder {
     pub config: DecoderConfig,
@@ -106,7 +115,9 @@ fn build_video_pipeline(path: &Path) -> Result<(gstreamer::Pipeline, AppSink), M
         if let Some(s) = structure
             && s.name().starts_with("video/")
         {
-            let sink_pad = videoconvert.static_pad("sink").unwrap();
+            let Some(sink_pad) = videoconvert.static_pad("sink") else {
+                return;
+            };
             if !sink_pad.is_linked() {
                 let _ = src_pad.link(&sink_pad);
             }
@@ -126,6 +137,7 @@ fn decode_video_range(
     tx: mpsc::Sender<VideoFrame>,
 ) -> Result<(), MediaPipelineError> {
     let (pipeline, appsink) = build_video_pipeline(path)?;
+    let _guard = PipelineGuard(pipeline.clone());
 
     pipeline
         .set_state(gstreamer::State::Playing)
@@ -154,10 +166,7 @@ fn decode_video_range(
         frame_index += 1;
     }
 
-    pipeline
-        .set_state(gstreamer::State::Null)
-        .map_err(|e| MediaPipelineError::StateChange(e.to_string()))?;
-
+    // Guard handles pipeline cleanup on all exit paths
     Ok(())
 }
 
@@ -167,11 +176,16 @@ fn decode_single_frame(
     frame_rate: (u32, u32),
 ) -> Result<VideoFrame, MediaPipelineError> {
     let (pipeline, appsink) = build_video_pipeline(path)?;
+    let _guard = PipelineGuard(pipeline.clone());
 
-    // Seek to the target timestamp
+    // Seek to the target timestamp — use checked arithmetic to avoid overflow
     let (num, den) = frame_rate;
     let timestamp_ns = if num > 0 {
-        (frame_index * den as u64 * 1_000_000_000) / num as u64
+        frame_index
+            .checked_mul(den as u64)
+            .and_then(|v| v.checked_mul(1_000_000_000))
+            .map(|v| v / num as u64)
+            .unwrap_or(u64::MAX)
     } else {
         0
     };
@@ -202,10 +216,7 @@ fn decode_single_frame(
     let frame = sample_to_frame(&sample, frame_index)
         .ok_or_else(|| MediaPipelineError::Decode("failed to extract frame data".into()))?;
 
-    pipeline
-        .set_state(gstreamer::State::Null)
-        .map_err(|e| MediaPipelineError::StateChange(e.to_string()))?;
-
+    // Guard handles pipeline cleanup
     Ok(frame)
 }
 

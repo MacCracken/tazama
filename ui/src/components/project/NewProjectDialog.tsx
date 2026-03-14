@@ -19,7 +19,10 @@ export function NewProjectDialog() {
   const [width, setWidth] = useState(1920);
   const [height, setHeight] = useState(1080);
 
+  const isValid = name.trim().length > 0 && width >= 100 && height >= 100;
+
   const handleCreate = async () => {
+    if (!isValid) return;
     try {
       await createProject(name, width, height);
       setShow(false);
@@ -84,6 +87,7 @@ export function NewProjectDialog() {
             <input
               type="number"
               value={width}
+              min={100}
               onChange={(e) => setWidth(parseInt(e.target.value) || 0)}
               className="w-full px-2 py-1 rounded text-xs"
               style={{
@@ -99,6 +103,7 @@ export function NewProjectDialog() {
             <input
               type="number"
               value={height}
+              min={100}
               onChange={(e) => setHeight(parseInt(e.target.value) || 0)}
               className="w-full px-2 py-1 rounded text-xs"
               style={{
@@ -121,10 +126,12 @@ export function NewProjectDialog() {
           </button>
           <button
             onClick={handleCreate}
+            disabled={!isValid}
             className="px-3 py-1 rounded text-xs font-medium"
             style={{
-              background: "var(--accent-primary)",
+              background: isValid ? "var(--accent-primary)" : "var(--bg-hover)",
               color: "#fff",
+              opacity: isValid ? 1 : 0.5,
             }}
           >
             Create
