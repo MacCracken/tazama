@@ -32,7 +32,7 @@ pub struct GpuContext {
     compute_queue: vk::Queue,
     compute_queue_family: u32,
     command_pool: vk::CommandPool,
-    allocator: Mutex<Allocator>,
+    allocator: Mutex<Option<Allocator>>,
 }
 
 impl GpuContext {
@@ -120,7 +120,7 @@ impl GpuContext {
             compute_queue,
             compute_queue_family,
             command_pool,
-            allocator: Mutex::new(allocator),
+            allocator: Mutex::new(Some(allocator)),
         })
     }
 
@@ -140,7 +140,7 @@ impl GpuContext {
         self.command_pool
     }
 
-    pub fn allocator(&self) -> &Mutex<Allocator> {
+    pub fn allocator(&self) -> &Mutex<Option<Allocator>> {
         &self.allocator
     }
 
@@ -154,11 +154,11 @@ impl Drop for GpuContext {
         unsafe {
             let _ = self.device.device_wait_idle();
             self.device.destroy_command_pool(self.command_pool, None);
-            // Drop allocator before device
-            let allocator = self.allocator.get_mut().unwrap();
-            // Drop allocator before device by replacing with a manually dropped value
-            // Allocator doesn't implement Default, so we drop it in place
-            std::ptr::drop_in_place(allocator);
+            // Drop allocator before device — take() removes it from the Option
+            // so it is dropped here, before the device is destroyed.
+            if let Ok(allocator) = self.allocator.get_mut() {
+                drop(allocator.take());
+            }
             self.device.destroy_device(None);
             self.instance.destroy_instance(None);
         }

@@ -133,6 +133,11 @@ export function useKeyboardShortcuts() {
           if (project) useUIStore.getState().setShowExportDialog(true);
           return;
         }
+        if (e.key === "o") {
+          e.preventDefault();
+          useProjectStore.getState().openProject();
+          return;
+        }
       }
     };
 

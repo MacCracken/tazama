@@ -41,6 +41,34 @@ Tauri v2 + React 19 / TypeScript / Vite / Tailwind v4 / Zustand frontend.
 
 ---
 
+## Engineering Backlog
+
+Known issues and hardening work identified during code audit. Prioritized by severity.
+
+### High Priority
+- [ ] GStreamer pipeline cleanup on early exit — decode pipelines stay in Playing state if receiver drops (media/decode/video.rs, audio.rs). Add RAII guard or defer pattern.
+- [ ] GStreamer `static_pad("sink").unwrap()` in decode pad-added callbacks — replace with safe fallback (media/decode/video.rs:107, audio.rs:96)
+- [ ] Integer overflow in frame timestamp calculation — `frame_index * den * 1_000_000_000` can overflow u64 (media/decode/video.rs:171). Use checked arithmetic.
+- [ ] Multi-track audio mixing for export — current export decodes audio tracks sequentially without mixing. Need a proper audio mixer for overlapping audio clips.
+- [ ] PreviewCanvas component — placeholder exists but no actual frame rendering from GPU to canvas. Needs WebSocket or shared memory bridge.
+- [ ] NewProjectDialog input validation — allows 0x0 resolution. Add minimum bounds (width/height >= 100).
+- [ ] MediaItem double-click silent failure — no feedback when no video track exists. Show toast.
+
+### Medium Priority
+- [ ] Mutex poisoning resilience — multiple `lock().unwrap()` calls across crates. Standardize on `unwrap_or_else(|e| e.into_inner())` pattern where recovery is safe.
+- [ ] Audio buffer alignment — `chunks_exact(4)` in audio decoder can panic on misaligned buffers (media/decode/audio.rs:154). Add validation.
+- [ ] ExportProgress listener cleanup — `unlisten.then((fn) => fn())` doesn't catch errors. Use safer cleanup pattern (ui/src/components/export/ExportProgress.tsx).
+- [ ] Missing loading states — FileActions open/save operations have no loading indicator.
+- [ ] `tazama_add_marker` missing from AGNOS manifest intents — tool is implemented but not discoverable via intent.
+- [ ] Unused `tempfile` dev-dependency in storage crate — remove from Cargo.toml.
+
+### Low Priority
+- [ ] Type narrowing in TypeScript — `number` types used where Rust expects `u32`/`u64`/`u16`. Add branded types or runtime validation for large frame numbers.
+- [ ] Per-file error feedback in batch import — currently shows toast per failure but doesn't indicate which files succeeded in batch.
+- [ ] Export pipeline `total_frames` tracking — progress_tx sends `total_frames: 0` from pipeline side. Propagate actual count.
+
+---
+
 ## Post-v1 Features
 
 ### Audio Editing

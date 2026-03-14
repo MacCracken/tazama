@@ -118,9 +118,7 @@ impl EditCommand {
                 track.split_clip(*original_id, *split_frame)?;
                 Ok(())
             }
-            EditCommand::AddTrack {
-                name, kind, ..
-            } => {
+            EditCommand::AddTrack { name, kind, .. } => {
                 let mut track = crate::timeline::Track::new(name.clone(), *kind);
                 // Use the stored track_id so undo can find it
                 track.id = match self {
@@ -147,9 +145,7 @@ impl EditCommand {
                 Ok(())
             }
             EditCommand::RemoveEffect {
-                clip_id,
-                effect,
-                ..
+                clip_id, effect, ..
             } => {
                 let (_, clip) = timeline
                     .find_clip_mut(*clip_id)
@@ -247,9 +243,7 @@ impl EditCommand {
                 Ok(())
             }
             EditCommand::ApplyEffect {
-                clip_id,
-                effect,
-                ..
+                clip_id, effect, ..
             } => {
                 let (_, clip) = timeline
                     .find_clip_mut(*clip_id)
@@ -258,9 +252,7 @@ impl EditCommand {
                 Ok(())
             }
             EditCommand::RemoveEffect {
-                clip_id,
-                effect,
-                ..
+                clip_id, effect, ..
             } => {
                 let (_, clip) = timeline
                     .find_clip_mut(*clip_id)
@@ -425,9 +417,17 @@ mod tests {
 
         // Verify split happened
         assert_eq!(timeline.tracks[0].clips.len(), 2);
-        let left = timeline.tracks[0].clips.iter().find(|c| c.id == clip_id).unwrap();
+        let left = timeline.tracks[0]
+            .clips
+            .iter()
+            .find(|c| c.id == clip_id)
+            .unwrap();
         assert_eq!(left.duration, 30);
-        let right = timeline.tracks[0].clips.iter().find(|c| c.id == new_id).unwrap();
+        let right = timeline.tracks[0]
+            .clips
+            .iter()
+            .find(|c| c.id == new_id)
+            .unwrap();
         assert_eq!(right.duration, 30);
 
         // Undo the split

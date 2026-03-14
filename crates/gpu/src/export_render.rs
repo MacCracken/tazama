@@ -1,5 +1,5 @@
-use tokio::sync::mpsc;
 use tazama_core::{ProjectSettings, Timeline};
+use tokio::sync::mpsc;
 
 use crate::context::GpuError;
 use crate::frame_source::{FrameSource, GpuFrame};

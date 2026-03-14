@@ -34,11 +34,15 @@ impl ServerState {
     }
 
     fn project(&self) -> Result<&Project, &'static str> {
-        self.project.as_ref().ok_or("No project loaded. Use tazama_create_project first.")
+        self.project
+            .as_ref()
+            .ok_or("No project loaded. Use tazama_create_project first.")
     }
 
     fn project_mut(&mut self) -> Result<&mut Project, &'static str> {
-        self.project.as_mut().ok_or("No project loaded. Use tazama_create_project first.")
+        self.project
+            .as_mut()
+            .ok_or("No project loaded. Use tazama_create_project first.")
     }
 }
 
@@ -191,7 +195,7 @@ async fn handle_request(request: &Value, state: &mut ServerState) -> Value {
                             "type": "object",
                             "properties": {
                                 "output_path": { "type": "string" },
-                                "format": { "type": "string", "enum": ["mp4", "webm", "mov"], "default": "mp4" }
+                                "format": { "type": "string", "enum": ["mp4", "webm"], "default": "mp4" }
                             },
                             "required": ["output_path"]
                         }
@@ -336,12 +340,13 @@ async fn handle_add_clip(id: &Value, args: &Value, state: &mut ServerState) -> V
     let clip = Clip::new(&clip_name, kind, start_frame, duration_frames).with_media(media_ref);
     let clip_id = clip.id;
 
-    let cmd = EditCommand::AddClip {
-        track_id,
-        clip,
+    let cmd = EditCommand::AddClip { track_id, clip };
+
+    let Some(project) = state.project.as_mut() else {
+        return mcp_error(id, "No project loaded. Use tazama_create_project first.");
     };
 
-    match state.history.execute(cmd, &mut state.project.as_mut().unwrap().timeline) {
+    match state.history.execute(cmd, &mut project.timeline) {
         Ok(()) => mcp_success(
             id,
             format!(
@@ -396,7 +401,11 @@ fn handle_apply_effect(id: &Value, args: &Value, state: &mut ServerState) -> Val
         effect,
     };
 
-    match state.history.execute(cmd, &mut state.project.as_mut().unwrap().timeline) {
+    let Some(project) = state.project.as_mut() else {
+        return mcp_error(id, "No project loaded. Use tazama_create_project first.");
+    };
+
+    match state.history.execute(cmd, &mut project.timeline) {
         Ok(()) => mcp_success(
             id,
             format!("Applied effect '{effect_name}' (ID: {effect_id}) to clip {clip_id_str}"),
@@ -426,15 +435,17 @@ async fn handle_export(id: &Value, args: &Value, state: &ServerState) -> Value {
         None => return mcp_error(id, "Missing required parameter: output_path"),
     };
 
-    let format_str = args
-        .get("format")
-        .and_then(|f| f.as_str())
-        .unwrap_or("mp4");
+    let format_str = args.get("format").and_then(|f| f.as_str()).unwrap_or("mp4");
 
     let format = match format_str {
         "mp4" => tazama_media::ExportFormat::Mp4,
         "webm" => tazama_media::ExportFormat::WebM,
-        _ => return mcp_error(id, format!("Unsupported format: {format_str}. Use mp4 or webm.")),
+        _ => {
+            return mcp_error(
+                id,
+                format!("Unsupported format: {format_str}. Use mp4 or webm."),
+            );
+        }
     };
 
     let config = tazama_media::ExportConfig {
@@ -483,10 +494,7 @@ fn handle_add_marker(id: &Value, args: &Value, state: &mut ServerState) -> Value
         None => return mcp_error(id, "Missing required parameter: frame"),
     };
 
-    let color_str = args
-        .get("color")
-        .and_then(|c| c.as_str())
-        .unwrap_or("blue");
+    let color_str = args.get("color").and_then(|c| c.as_str()).unwrap_or("blue");
 
     let color = match color_str {
         "red" => MarkerColor::Red,
@@ -502,14 +510,13 @@ fn handle_add_marker(id: &Value, args: &Value, state: &mut ServerState) -> Value
     let marker = Marker::new(name, frame, color);
     let marker_id = marker.id.0.to_string();
 
-    let cmd = EditCommand::AddMarker {
-        marker,
+    let cmd = EditCommand::AddMarker { marker };
+
+    let Some(project) = state.project.as_mut() else {
+        return mcp_error(id, "No project loaded. Use tazama_create_project first.");
     };
 
-    match state
-        .history
-        .execute(cmd, &mut state.project.as_mut().unwrap().timeline)
-    {
+    match state.history.execute(cmd, &mut project.timeline) {
         Ok(()) => mcp_success(
             id,
             format!("Added marker '{name}' at frame {frame} (ID: {marker_id})"),
@@ -537,10 +544,22 @@ fn find_track_id(timeline: &Timeline, name_or_id: &str) -> Option<tazama_core::T
 fn parse_effect_kind(name: &str, params: &Value) -> Result<EffectKind, String> {
     match name {
         "color_grade" => Ok(EffectKind::ColorGrade {
-            brightness: params.get("brightness").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
-            contrast: params.get("contrast").and_then(|v| v.as_f64()).unwrap_or(1.0) as f32,
-            saturation: params.get("saturation").and_then(|v| v.as_f64()).unwrap_or(1.0) as f32,
-            temperature: params.get("temperature").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
+            brightness: params
+                .get("brightness")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0) as f32,
+            contrast: params
+                .get("contrast")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(1.0) as f32,
+            saturation: params
+                .get("saturation")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(1.0) as f32,
+            temperature: params
+                .get("temperature")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0) as f32,
         }),
         "crop" => Ok(EffectKind::Crop {
             left: params.get("left").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
@@ -574,7 +593,10 @@ fn parse_effect_kind(name: &str, params: &Value) -> Result<EffectKind, String> {
             })
         }
         "volume" => {
-            let gain_db = params.get("gain_db").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+            let gain_db = params
+                .get("gain_db")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0) as f32;
             Ok(EffectKind::Volume { gain_db })
         }
         _ => Err(format!("Unknown effect: {name}")),

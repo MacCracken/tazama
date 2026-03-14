@@ -48,6 +48,7 @@ pub struct FrameRate {
 
 impl FrameRate {
     pub fn new(numerator: u32, denominator: u32) -> Self {
+        assert!(denominator > 0, "frame rate denominator must be > 0");
         Self {
             numerator,
             denominator,
@@ -55,6 +56,9 @@ impl FrameRate {
     }
 
     pub fn fps(&self) -> f64 {
+        if self.denominator == 0 {
+            return 0.0;
+        }
         self.numerator as f64 / self.denominator as f64
     }
 }

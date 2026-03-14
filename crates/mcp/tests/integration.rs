@@ -85,10 +85,7 @@ fn test_tools_list() {
     let tools = response["result"]["tools"].as_array().unwrap();
     assert_eq!(tools.len(), 6);
 
-    let tool_names: Vec<&str> = tools
-        .iter()
-        .map(|t| t["name"].as_str().unwrap())
-        .collect();
+    let tool_names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
     assert!(tool_names.contains(&"tazama_create_project"));
     assert!(tool_names.contains(&"tazama_add_clip"));
     assert!(tool_names.contains(&"tazama_apply_effect"));

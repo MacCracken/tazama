@@ -73,7 +73,12 @@ impl Track {
     }
 
     /// Check if a clip would overlap with any existing clip on this track.
-    fn check_overlap(&self, start: u64, end: u64, exclude_id: Option<ClipId>) -> Result<(), TimelineError> {
+    fn check_overlap(
+        &self,
+        start: u64,
+        end: u64,
+        exclude_id: Option<ClipId>,
+    ) -> Result<(), TimelineError> {
         for c in &self.clips {
             if Some(c.id) == exclude_id {
                 continue;
@@ -169,11 +174,7 @@ impl Track {
         let _ = clip;
         self.check_overlap(start, new_end, Some(self_id))?;
 
-        let clip = self
-            .clips
-            .iter_mut()
-            .find(|c| c.id == self_id)
-            .unwrap();
+        let clip = self.clips.iter_mut().find(|c| c.id == self_id).unwrap();
         clip.trim(new_offset, new_duration)
     }
 
@@ -305,7 +306,10 @@ impl Timeline {
 
     /// Get video tracks that should be rendered (respects visible + solo logic).
     pub fn visible_video_tracks(&self) -> Vec<&Track> {
-        let any_solo = self.tracks.iter().any(|t| t.solo && t.kind == TrackKind::Video);
+        let any_solo = self
+            .tracks
+            .iter()
+            .any(|t| t.solo && t.kind == TrackKind::Video);
         self.tracks
             .iter()
             .filter(|t| {

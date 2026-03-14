@@ -99,7 +99,9 @@ fn build_video_pipeline(path: &Path) -> Result<(gstreamer::Pipeline, AppSink), M
             return;
         };
 
-        let caps = src_pad.current_caps().unwrap_or_else(|| src_pad.query_caps(None));
+        let caps = src_pad
+            .current_caps()
+            .unwrap_or_else(|| src_pad.query_caps(None));
         let structure = caps.structure(0);
         if let Some(s) = structure
             && s.name().starts_with("video/")
@@ -218,10 +220,7 @@ fn sample_to_frame(sample: &gstreamer::Sample, frame_index: u64) -> Option<Video
     let map = buffer.map_readable().ok()?;
     let data = Bytes::copy_from_slice(map.as_slice());
 
-    let timestamp_ns = buffer
-        .pts()
-        .map(|pts| pts.nseconds())
-        .unwrap_or(0);
+    let timestamp_ns = buffer.pts().map(|pts| pts.nseconds()).unwrap_or(0);
 
     Some(VideoFrame {
         frame_index,

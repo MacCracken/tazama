@@ -17,7 +17,11 @@ pub struct ShaderModule {
 impl ShaderModule {
     /// Create a shader module from SPIR-V bytes.
     pub fn from_spirv(device: &ash::Device, spirv: &[u8]) -> Result<Self, GpuError> {
-        // Align to u32
+        if !spirv.len().is_multiple_of(4) {
+            return Err(GpuError::ShaderCompilation(
+                "SPIR-V bytecode is not 4-byte aligned".into(),
+            ));
+        }
         let code: Vec<u32> = spirv
             .chunks_exact(4)
             .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))

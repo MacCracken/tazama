@@ -10,5 +10,5 @@ pub mod shader;
 pub use context::{GpuContext, GpuError};
 pub use frame_source::{FrameSource, GpuFrame};
 pub use pipeline::PipelineCache;
-pub use preview::PreviewLoop;
+pub use preview::{AudioOutput, PreviewLoop};
 pub use render::Renderer;

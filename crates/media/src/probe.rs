@@ -1,7 +1,7 @@
 use std::path::Path;
 
-use gstreamer_pbutils::prelude::*;
 use gstreamer_pbutils::Discoverer;
+use gstreamer_pbutils::prelude::*;
 use tazama_core::{AudioStreamInfo, Codec, ContainerFormat, MediaInfo, VideoStreamInfo};
 use tokio::task;
 
@@ -17,9 +17,7 @@ pub async fn probe(path: &Path) -> Result<MediaInfo, MediaPipelineError> {
 
 fn probe_sync(path: &Path) -> Result<MediaInfo, MediaPipelineError> {
     if !path.exists() {
-        return Err(MediaPipelineError::FileNotFound(
-            path.display().to_string(),
-        ));
+        return Err(MediaPipelineError::FileNotFound(path.display().to_string()));
     }
 
     let timeout = gstreamer::ClockTime::from_seconds(10);
@@ -32,12 +30,12 @@ fn probe_sync(path: &Path) -> Result<MediaInfo, MediaPipelineError> {
         format!("file://{}", abs.display())
     };
 
-    let info = discoverer.discover_uri(&uri).map_err(|e| {
-        MediaPipelineError::ProbeFailed {
+    let info = discoverer
+        .discover_uri(&uri)
+        .map_err(|e| MediaPipelineError::ProbeFailed {
             path: path.display().to_string(),
             reason: e.to_string(),
-        }
-    })?;
+        })?;
 
     let duration_ns = info.duration().map(|d| d.nseconds()).unwrap_or(0);
     let duration_ms = duration_ns / 1_000_000;

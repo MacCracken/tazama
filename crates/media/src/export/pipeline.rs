@@ -124,10 +124,7 @@ fn run_export(
     };
 
     let filesink = gstreamer::ElementFactory::make("filesink")
-        .property(
-            "location",
-            config.output_path.to_str().unwrap_or_default(),
-        )
+        .property("location", config.output_path.to_str().unwrap_or_default())
         .build()
         .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
 
@@ -180,12 +177,16 @@ fn run_export(
     // Feed video frames
     let mut frames_written = 0u64;
     while let Some(frame) = video_rx.blocking_recv() {
-        let mut gst_buffer =
-            gstreamer::Buffer::with_size(frame.data.len()).unwrap();
+        let mut gst_buffer = gstreamer::Buffer::with_size(frame.data.len())
+            .map_err(|_| MediaPipelineError::Export("failed to allocate video buffer".into()))?;
         {
-            let buffer_ref = gst_buffer.get_mut().unwrap();
+            let buffer_ref = gst_buffer
+                .get_mut()
+                .ok_or_else(|| MediaPipelineError::Export("video buffer not writable".into()))?;
             buffer_ref.set_pts(gstreamer::ClockTime::from_nseconds(frame.timestamp_ns));
-            let mut map = buffer_ref.map_writable().unwrap();
+            let mut map = buffer_ref
+                .map_writable()
+                .map_err(|_| MediaPipelineError::Export("failed to map video buffer".into()))?;
             map.copy_from_slice(&frame.data);
         }
 
@@ -196,11 +197,13 @@ fn run_export(
         frames_written += 1;
         let _ = progress_tx.send(ExportProgress {
             frames_written,
-            total_frames: 0, // caller should know total
+            total_frames: 0,
             done: false,
         });
     }
-    video_appsrc.end_of_stream().map_err(|e| MediaPipelineError::Export(e.to_string()))?;
+    video_appsrc
+        .end_of_stream()
+        .map_err(|e| MediaPipelineError::Export(e.to_string()))?;
 
     // Feed audio buffers
     while let Some(audio_buf) = audio_rx.blocking_recv() {
@@ -210,11 +213,20 @@ fn run_export(
             .flat_map(|s| s.to_le_bytes())
             .collect();
 
-        let mut gst_buffer = gstreamer::Buffer::with_size(byte_data.len()).unwrap();
+        if byte_data.is_empty() {
+            continue;
+        }
+
+        let mut gst_buffer = gstreamer::Buffer::with_size(byte_data.len())
+            .map_err(|_| MediaPipelineError::Export("failed to allocate audio buffer".into()))?;
         {
-            let buffer_ref = gst_buffer.get_mut().unwrap();
+            let buffer_ref = gst_buffer
+                .get_mut()
+                .ok_or_else(|| MediaPipelineError::Export("audio buffer not writable".into()))?;
             buffer_ref.set_pts(gstreamer::ClockTime::from_nseconds(audio_buf.timestamp_ns));
-            let mut map = buffer_ref.map_writable().unwrap();
+            let mut map = buffer_ref
+                .map_writable()
+                .map_err(|_| MediaPipelineError::Export("failed to map audio buffer".into()))?;
             map.copy_from_slice(&byte_data);
         }
 
@@ -222,10 +234,14 @@ fn run_export(
             .push_buffer(gst_buffer)
             .map_err(|e| MediaPipelineError::Export(e.to_string()))?;
     }
-    audio_appsrc.end_of_stream().map_err(|e| MediaPipelineError::Export(e.to_string()))?;
+    audio_appsrc
+        .end_of_stream()
+        .map_err(|e| MediaPipelineError::Export(e.to_string()))?;
 
     // Wait for EOS on the bus
-    let bus = pipeline.bus().unwrap();
+    let bus = pipeline
+        .bus()
+        .ok_or_else(|| MediaPipelineError::Export("pipeline has no bus".into()))?;
     for msg in bus.iter_timed(gstreamer::ClockTime::from_seconds(120)) {
         match msg.view() {
             gstreamer::MessageView::Eos(..) => {

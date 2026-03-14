@@ -17,9 +17,7 @@ pub async fn generate_thumbnails(
     let info = probe::probe(path).await?;
 
     let Some(video) = info.video_streams.first() else {
-        return Err(MediaPipelineError::Decode(
-            "no video stream found".into(),
-        ));
+        return Err(MediaPipelineError::Decode("no video stream found".into()));
     };
 
     let frame_rate = video.frame_rate;

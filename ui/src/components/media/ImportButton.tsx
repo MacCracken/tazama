@@ -29,9 +29,12 @@ export function ImportButton() {
       for (const path of paths) {
         try {
           const info = await commands.probeMedia(path);
+          // Copy file into the project media directory
+          const projectRoot = project.name;
+          const importedPath = await commands.importMedia(projectRoot, path);
           const name = path.split(/[\\/]/).pop() ?? path;
           addMediaAsset({
-            path,
+            path: importedPath,
             name,
             duration_frames: info.duration_frames,
           });

@@ -1,5 +1,5 @@
-use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
 use sqlx::Row;
+use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
 use thiserror::Error;
 
 use tazama_core::{MediaInfo, Project};
@@ -122,9 +122,10 @@ impl Database {
 
     /// List all projects (id, name, modified_at).
     pub async fn list_projects(&self) -> Result<Vec<(String, String, String)>, DbError> {
-        let rows = sqlx::query("SELECT id, name, modified_at FROM projects ORDER BY modified_at DESC")
-            .fetch_all(&self.pool)
-            .await?;
+        let rows =
+            sqlx::query("SELECT id, name, modified_at FROM projects ORDER BY modified_at DESC")
+                .fetch_all(&self.pool)
+                .await?;
 
         let projects = rows
             .iter()

@@ -96,10 +96,12 @@ export function ExportDialog() {
             </button>
             <button
               onClick={handleExport}
+              disabled={exporting}
               className="px-3 py-1 rounded text-xs font-medium"
               style={{
-                background: "var(--accent-primary)",
+                background: exporting ? "var(--bg-hover)" : "var(--accent-primary)",
                 color: "#fff",
+                opacity: exporting ? 0.5 : 1,
               }}
             >
               Export

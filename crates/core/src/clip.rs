@@ -87,11 +87,7 @@ impl Clip {
 
     /// Adjust trim points. `new_source_offset` is the new offset into source media,
     /// `new_duration` is the new timeline duration.
-    pub fn trim(
-        &mut self,
-        new_source_offset: u64,
-        new_duration: u64,
-    ) -> Result<(), TimelineError> {
+    pub fn trim(&mut self, new_source_offset: u64, new_duration: u64) -> Result<(), TimelineError> {
         if let Some(ref media) = self.media {
             let source_end = new_source_offset + new_duration;
             if source_end > media.duration_frames {

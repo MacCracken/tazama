@@ -1,6 +1,6 @@
 use ash::vk;
-use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme};
 use gpu_allocator::MemoryLocation;
+use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme};
 
 use crate::context::{GpuContext, GpuError};
 
@@ -31,7 +31,9 @@ impl GpuBuffer {
         let allocation = ctx
             .allocator()
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_mut()
+            .ok_or_else(|| GpuError::Allocator("allocator already destroyed".into()))?
             .allocate(&AllocationCreateDesc {
                 name,
                 requirements,
@@ -70,9 +72,15 @@ impl GpuBuffer {
 
     /// Destroy the buffer, freeing its memory.
     pub fn destroy(mut self, ctx: &GpuContext) {
-        if let Some(allocation) = self.allocation.take() {
-            let _ = ctx.allocator().lock().unwrap().free(allocation);
-        }
+        if let Some(allocation) = self.allocation.take()
+            && let Some(alloc) = ctx
+                .allocator()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .as_mut()
+            {
+                let _ = alloc.free(allocation);
+            }
         unsafe {
             ctx.device().destroy_buffer(self.buffer, None);
         }

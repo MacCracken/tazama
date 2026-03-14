@@ -1,8 +1,8 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::Stream;
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 use crate::decode::AudioBuffer;
 
@@ -58,10 +58,8 @@ impl AudioPreview {
                     *sample = st.buffer.pop_front().unwrap_or(0.0);
                 }
                 // Advance position based on samples consumed
-                let frames_consumed =
-                    data.len() as u64 / st.channels as u64;
-                let ns_per_frame =
-                    1_000_000_000u64 / st.sample_rate as u64;
+                let frames_consumed = data.len() as u64 / st.channels as u64;
+                let ns_per_frame = 1_000_000_000u64 / st.sample_rate as u64;
                 st.position_ns += frames_consumed * ns_per_frame;
             },
             |err| {

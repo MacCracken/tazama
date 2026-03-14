@@ -1,11 +1,19 @@
 use std::sync::Arc;
 
+use tazama_core::{FrameRate, PlaybackPosition, PlaybackState, ProjectSettings, Timeline};
 use tokio::sync::{mpsc, watch};
 use tokio::time::{self, Duration};
-use tazama_core::{FrameRate, PlaybackPosition, PlaybackState, ProjectSettings, Timeline};
 
 use crate::frame_source::{FrameSource, GpuFrame};
 use crate::render::Renderer;
+
+/// Trait for audio output during preview playback.
+///
+/// Implemented by `tazama_media::AudioPreview` in the app layer, keeping
+/// the gpu crate free of media dependencies.
+pub trait AudioOutput: Send + Sync {
+    fn set_playing(&self, playing: bool);
+}
 
 /// Real-time preview loop that renders frames at the project frame rate.
 pub struct PreviewLoop {
@@ -27,7 +35,7 @@ impl PreviewLoop {
         frame_source: Arc<dyn FrameSource>,
         position_rx: watch::Receiver<PlaybackPosition>,
         frame_tx: mpsc::Sender<GpuFrame>,
-        audio_preview: Option<Arc<tazama_media::AudioPreview>>,
+        audio_preview: Option<Arc<dyn AudioOutput>>,
     ) -> Self {
         let handle = tokio::spawn(async move {
             let fps = frame_rate_to_fps(&settings.frame_rate);
@@ -50,7 +58,12 @@ impl PreviewLoop {
 
                 let frame_index = position.frame;
 
-                match renderer.render_frame(&timeline, frame_index, frame_source.as_ref(), &settings) {
+                match renderer.render_frame(
+                    &timeline,
+                    frame_index,
+                    frame_source.as_ref(),
+                    &settings,
+                ) {
                     Ok(frame) => {
                         // Try to send, drop frame if channel is full
                         let _ = frame_tx.try_send(frame);

@@ -1,4 +1,5 @@
 mod commands;
+mod frame_source;
 
 use tauri::Manager;
 

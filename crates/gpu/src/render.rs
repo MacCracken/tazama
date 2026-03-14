@@ -1,17 +1,15 @@
 use std::sync::Arc;
 
 use ash::vk;
-use bytes::Bytes;
 use bytemuck;
+use bytes::Bytes;
 use gpu_allocator::MemoryLocation;
 use tazama_core::{EffectKind, ProjectSettings, Timeline, TrackKind, TransitionKind};
 
 use crate::buffer::GpuBuffer;
 use crate::context::{GpuContext, GpuError};
 use crate::frame_source::{FrameSource, GpuFrame};
-use crate::pipeline::{
-    ColorGradePush, CompositePush, CropPush, PipelineCache, TransitionPush,
-};
+use crate::pipeline::{ColorGradePush, CompositePush, CropPush, PipelineCache, TransitionPush};
 
 /// Renders timeline frames using Vulkan compute pipelines.
 pub struct Renderer {
@@ -85,8 +83,7 @@ impl Renderer {
             // Compute source frame index
             let speed = clip_info.speed_factor;
             let local_frame = frame_index - clip_info.timeline_start;
-            let source_frame =
-                clip_info.source_offset + (local_frame as f32 * speed) as u64;
+            let source_frame = clip_info.source_offset + (local_frame as f32 * speed) as u64;
 
             // Decode source frame
             let media_path = match &clip_info.media_path {
@@ -159,8 +156,8 @@ impl Renderer {
                         let crop_top = (*top * height as f32) as u32;
                         let crop_right = (*right * width as f32) as u32;
                         let crop_bottom = (*bottom * height as f32) as u32;
-                        let dst_w = width - crop_left - crop_right;
-                        let dst_h = height - crop_top - crop_bottom;
+                        let dst_w = width.saturating_sub(crop_left + crop_right).max(1);
+                        let dst_h = height.saturating_sub(crop_top + crop_bottom).max(1);
                         let dst_size = GpuBuffer::frame_buffer_size(dst_w, dst_h);
 
                         let output = GpuBuffer::new(
@@ -242,7 +239,13 @@ impl Renderer {
 
         // Handle transitions between adjacent clips
         // (check for Transition effects on clips and apply dissolve/wipe/fade)
-        self.apply_transitions(timeline, frame_index, &mut accumulator, frame_source, settings)?;
+        self.apply_transitions(
+            timeline,
+            frame_index,
+            &mut accumulator,
+            frame_source,
+            settings,
+        )?;
 
         // Readback
         let readback = GpuBuffer::new(
@@ -319,8 +322,8 @@ impl Renderer {
                                 None => continue,
                             };
 
-                            let progress = (frame_index - trans_start) as f32
-                                / *duration_frames as f32;
+                            let progress =
+                                (frame_index - trans_start) as f32 / *duration_frames as f32;
 
                             let next_source_frame = next_clip.source_offset;
                             let next_decoded =
@@ -520,7 +523,8 @@ impl Renderer {
         let device = self.ctx.device();
 
         unsafe {
-            device.reset_command_buffer(self.command_buffer, vk::CommandBufferResetFlags::empty())?;
+            device
+                .reset_command_buffer(self.command_buffer, vk::CommandBufferResetFlags::empty())?;
 
             let begin_info = vk::CommandBufferBeginInfo::default()
                 .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
@@ -590,7 +594,8 @@ impl Renderer {
     fn clear_buffer(&self, buffer: &GpuBuffer, size: u64) -> Result<(), GpuError> {
         let device = self.ctx.device();
         unsafe {
-            device.reset_command_buffer(self.command_buffer, vk::CommandBufferResetFlags::empty())?;
+            device
+                .reset_command_buffer(self.command_buffer, vk::CommandBufferResetFlags::empty())?;
             let begin_info = vk::CommandBufferBeginInfo::default()
                 .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
             device.begin_command_buffer(self.command_buffer, &begin_info)?;
@@ -620,21 +625,22 @@ impl Renderer {
     }
 
     /// Copy data between two buffers.
-    fn copy_buffer(
-        &self,
-        src: &GpuBuffer,
-        dst: &GpuBuffer,
-        size: u64,
-    ) -> Result<(), GpuError> {
+    fn copy_buffer(&self, src: &GpuBuffer, dst: &GpuBuffer, size: u64) -> Result<(), GpuError> {
         let device = self.ctx.device();
         unsafe {
-            device.reset_command_buffer(self.command_buffer, vk::CommandBufferResetFlags::empty())?;
+            device
+                .reset_command_buffer(self.command_buffer, vk::CommandBufferResetFlags::empty())?;
             let begin_info = vk::CommandBufferBeginInfo::default()
                 .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
             device.begin_command_buffer(self.command_buffer, &begin_info)?;
 
             let region = vk::BufferCopy::default().size(size);
-            device.cmd_copy_buffer(self.command_buffer, src.vk_buffer(), dst.vk_buffer(), &[region]);
+            device.cmd_copy_buffer(
+                self.command_buffer,
+                src.vk_buffer(),
+                dst.vk_buffer(),
+                &[region],
+            );
 
             let barrier = vk::MemoryBarrier::default()
                 .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
