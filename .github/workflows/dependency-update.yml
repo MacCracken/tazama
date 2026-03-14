@@ -1,0 +1,53 @@
+name: Dependency Update
+
+on:
+  schedule:
+    - cron: '0 2 * * 1'  # Mondays at 2 AM UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-dependencies:
+    name: Update Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust-env
+        with:
+          cache-prefix: deps-update
+
+      - name: Check outdated
+        run: |
+          cargo install cargo-outdated --locked
+          echo "## Current outdated dependencies" > deps-report.md
+          echo '```' >> deps-report.md
+          cargo outdated --root-deps-only >> deps-report.md 2>&1 || true
+          echo '```' >> deps-report.md
+
+      - name: Update dependencies
+        run: cargo update
+
+      - name: Run tests
+        run: cargo test --workspace
+
+      - name: Create PR
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: chore/dependency-update
+          title: 'chore: update dependencies'
+          body: |
+            Automated dependency update.
+
+            $(cat deps-report.md)
+
+            ---
+            *This PR was created automatically by the dependency update workflow.*
+          labels: dependencies
+          delete-branch: true

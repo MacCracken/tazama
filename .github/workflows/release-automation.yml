@@ -1,0 +1,50 @@
+name: Release Automation
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (CalVer: YYYY.M.D or YYYY.M.D-N)'
+        required: true
+        type: string
+
+jobs:
+  create-release-tag:
+    name: Create Release Tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate version format
+        run: |
+          if ! echo "${{ inputs.version }}" | grep -qE '^[0-9]{4}\.[0-9]{1,2}\.[0-9]{1,2}(-[0-9]+)?$'; then
+            echo "Invalid version format: ${{ inputs.version }}"
+            echo "Expected: YYYY.M.D or YYYY.M.D-N"
+            exit 1
+          fi
+
+      - name: Check tag doesn't exist
+        run: |
+          if git tag -l "${{ inputs.version }}" | grep -q .; then
+            echo "Tag ${{ inputs.version }} already exists"
+            exit 1
+          fi
+
+      - name: Update VERSION file
+        run: echo "${{ inputs.version }}" > VERSION
+
+      - name: Commit and tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add VERSION
+          git commit -m "release: ${{ inputs.version }}"
+          git tag -a "${{ inputs.version }}" -m "Release ${{ inputs.version }}"
+
+      - name: Push
+        run: |
+          git push origin main
+          git push origin "${{ inputs.version }}"
