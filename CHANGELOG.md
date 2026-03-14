@@ -2,6 +2,86 @@
 
 ## 2026.3.13
 
+### Phase 4 — Desktop UI
+
+#### Frontend Scaffold
+- React 19 + Vite 6 + TypeScript 5 + Tailwind CSS v4 frontend at `ui/`
+- Tauri v2 config with 1440x900 window, dev server integration
+- Dark theme with 25+ CSS custom properties (--bg-*, --text-*, --clip-*, etc.)
+- Zustand 5 state management with Immer for immutable updates
+
+#### TypeScript Types & IPC (`ui/src/types/`, `ui/src/ipc/`)
+- Full TypeScript mirror of all Rust core types (Project, Timeline, Track, Clip, Effect, MediaInfo)
+- EffectKind as externally-tagged discriminated union matching Rust serde output
+- Typed `invoke()` wrappers for all 6 Tauri commands
+
+#### State Management (`ui/src/stores/`)
+- `projectStore` — project lifecycle, track/clip/effect CRUD with automatic undo history
+- `historyStore` — snapshot-based undo/redo (max 100 entries, structuredClone)
+- `playbackStore` — transport controls, shuttle speed, loop regions
+- `uiStore` — selection, zoom/scroll, active tool, panel sizes, dialog/toast state
+
+#### App Shell & Layout (`ui/src/components/layout/`)
+- CSS Grid layout: toolbar (40px) + three-panel editor + timeline
+- Media browser (240px) | preview monitor | inspector (280px)
+- Draggable panel resizers
+
+#### Toolbar (`ui/src/components/toolbar/`)
+- File actions: new, open, save, export with Tauri dialog plugin
+- Edit tools: select (V), razor (B), slip (S) with inline SVG icons
+- Transport controls: play/pause, stop, step forward/back
+- Timecode display: HH:MM:SS:FF from frame position + project frame rate
+
+#### Timeline Panel (`ui/src/components/timeline/`)
+- DOM-based timeline with absolutely-positioned clip blocks
+- TimelineRuler with tick marks and click-to-seek
+- TrackRow with header (name, kind badge, mute/lock buttons) + clip lane
+- ClipBlock colored by kind (video=blue, audio=green, image=purple, title=amber)
+- Playhead (red vertical line with triangle marker)
+- Drag-to-move clips, edge-handle trimming, razor tool splitting
+- Ctrl+scroll zoom (0.1–10 px/frame), horizontal scroll
+
+#### Media Browser (`ui/src/components/media/`)
+- Import button with file dialog (video, audio, image formats)
+- Media asset list with drag-and-drop to timeline
+- GStreamer probe for imported file metadata
+
+#### Inspector Panel (`ui/src/components/inspector/`)
+- Clip inspector: name, position, duration, kind, opacity/volume sliders
+- Effect list with add/remove, per-EffectKind parameter display
+- Track inspector: name, kind, muted/locked toggles, remove button
+- Context-aware: shows clip, track, or empty state based on selection
+
+#### Preview Monitor (`ui/src/components/preview/`)
+- 16:9 aspect-ratio container with canvas element
+- Timecode overlay (M:SS:FF format)
+
+#### Project Dialogs (`ui/src/components/project/`)
+- Welcome screen with new project / open project / recent projects
+- New project dialog with resolution presets (1080p, 4K, 720p, square, vertical)
+
+#### Export (`ui/src/components/export/`)
+- Export dialog with format selection (MP4/WebM) and resolution display
+- Progress bar with Tauri event listener for `export-progress` events
+
+#### Shared Components (`ui/src/components/shared/`)
+- Modal with ESC-to-close and backdrop click
+- Toast notifications (error/success/info, auto-dismiss 4s)
+- ErrorBoundary with recovery button
+- Slider and NumberInput controls
+
+#### Keyboard Shortcuts (`ui/src/hooks/`)
+- Space: play/pause, J/K/L: shuttle control, I/O: loop points
+- Arrow keys: step frame, Delete: remove selected clip
+- Ctrl+Z/Ctrl+Shift+Z: undo/redo, Ctrl+S: save, Ctrl+N: new, Ctrl+E: export
+- B: razor, V: select, S: slip, +/-: zoom timeline
+- Input-field-aware (shortcuts disabled when typing)
+
+#### Rust Backend (`tazama`)
+- `probe_media` command — GStreamer media probe via IPC
+- `export_project` command — export pipeline with progress events
+- `tazama-media` dependency added to app crate
+
 ### Phase 3 — GPU Rendering
 
 #### Vulkan Compute Pipelines (`tazama-gpu`)

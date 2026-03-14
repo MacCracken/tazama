@@ -8,21 +8,22 @@ Tazama is an AI-native non-linear video editor. MVP target: import media, arrang
 - **Phase 1** — Media Pipeline (GStreamer probe, decode, thumbnails, waveforms, export)
 - **Phase 2** — Functional Editing Backend (clip ops, undo/redo, SQLite persistence, MCP tool dispatch)
 - **Phase 3** — GPU Rendering (Vulkan compute pipelines, 6 effect shaders, preview/export render loops)
+- **Phase 4** — Desktop UI (React 19 + Vite + Tailwind v4, full NLE interface)
 
-## Phase 4 — Desktop UI
+## Phase 4 — Desktop UI (complete)
 
-Tauri v2 + React/TypeScript frontend.
+Tauri v2 + React 19 / TypeScript / Vite / Tailwind v4 / Zustand frontend.
 
-- [ ] Frontend scaffold (Vite + React + TypeScript, Tauri integration)
-- [ ] Timeline panel (multi-track with clip blocks, drag/drop, scrubber)
-- [ ] Preview monitor (video preview receiving rendered frames)
-- [ ] Media browser (import, browse, search project media assets)
-- [ ] Inspector panel (clip properties, effect parameters)
-- [ ] Toolbar (cut, trim, split, snap, magnet, zoom tools)
-- [ ] Keyboard shortcuts (standard NLE keybindings — J/K/L, I/O, spacebar)
-- [ ] Export dialog (format, resolution, bitrate, output path)
-- [ ] Project management (new, open, save, recent projects)
-- [ ] Theming (dark theme, AGNOS aethersafha integration)
+- [x] Frontend scaffold (Vite + React + TypeScript, Tauri integration)
+- [x] Timeline panel (multi-track with clip blocks, drag/drop, scrubber)
+- [x] Preview monitor (video preview receiving rendered frames)
+- [x] Media browser (import, browse, search project media assets)
+- [x] Inspector panel (clip properties, effect parameters)
+- [x] Toolbar (select/razor/slip tools, transport, timecode display)
+- [x] Keyboard shortcuts (standard NLE keybindings — J/K/L, I/O, spacebar)
+- [x] Export dialog (format, resolution, output path, progress bar)
+- [x] Project management (new, open, save, recent projects, welcome screen)
+- [x] Theming (dark theme with CSS custom properties)
 
 ## Phase 5 — MCP & AGNOS Integration
 

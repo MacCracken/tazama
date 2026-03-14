@@ -4736,6 +4736,7 @@ dependencies = [
  "tauri-plugin-shell",
  "tazama-core",
  "tazama-gpu",
+ "tazama-media",
  "tazama-storage",
  "tokio",
  "tracing",

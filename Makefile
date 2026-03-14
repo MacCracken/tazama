@@ -57,7 +57,7 @@ release:
 	$(CARGO) build --release --workspace
 
 frontend:
-	npm run build
+	cd ui && npm run build
 
 clean:
 	$(CARGO) clean

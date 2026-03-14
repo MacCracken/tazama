@@ -14,6 +14,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tazama-core = { path = "../core" }
+tazama-media = { path = "../media" }
 tazama-storage = { path = "../storage" }
 tazama-gpu = { path = "../gpu" }
 tauri = { version = "2", features = ["devtools"] }
