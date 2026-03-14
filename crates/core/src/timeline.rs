@@ -3,6 +3,7 @@ use thiserror::Error;
 use uuid::Uuid;
 
 use crate::clip::{Clip, ClipId};
+use crate::marker::{Marker, MarkerId};
 
 #[derive(Debug, Error)]
 pub enum TimelineError {
@@ -53,6 +54,8 @@ pub struct Track {
     pub clips: Vec<Clip>,
     pub muted: bool,
     pub locked: bool,
+    pub solo: bool,
+    pub visible: bool,
 }
 
 impl Track {
@@ -64,6 +67,8 @@ impl Track {
             clips: Vec::new(),
             muted: false,
             locked: false,
+            solo: false,
+            visible: true,
         }
     }
 
@@ -197,11 +202,15 @@ impl Track {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Timeline {
     pub tracks: Vec<Track>,
+    pub markers: Vec<Marker>,
 }
 
 impl Timeline {
     pub fn new() -> Self {
-        Self { tracks: Vec::new() }
+        Self {
+            tracks: Vec::new(),
+            markers: Vec::new(),
+        }
     }
 
     pub fn add_track(&mut self, track: Track) -> TrackId {
@@ -255,6 +264,63 @@ impl Timeline {
             }
         }
         None
+    }
+
+    /// Add a marker to the timeline.
+    pub fn add_marker(&mut self, marker: Marker) {
+        self.markers.push(marker);
+        self.markers.sort_by_key(|m| m.frame);
+    }
+
+    /// Remove a marker by ID.
+    pub fn remove_marker(&mut self, id: MarkerId) -> Option<Marker> {
+        let idx = self.markers.iter().position(|m| m.id == id)?;
+        Some(self.markers.remove(idx))
+    }
+
+    /// Get all markers within a frame range (inclusive start, exclusive end).
+    pub fn markers_in_range(&self, start: u64, end: u64) -> Vec<&Marker> {
+        self.markers
+            .iter()
+            .filter(|m| m.frame >= start && m.frame < end)
+            .collect()
+    }
+
+    /// Get tracks that should produce audio (respects muted + solo logic).
+    pub fn audible_tracks(&self) -> Vec<&Track> {
+        let any_solo = self.tracks.iter().any(|t| t.solo);
+        self.tracks
+            .iter()
+            .filter(|t| {
+                if t.muted {
+                    return false;
+                }
+                if any_solo {
+                    return t.solo;
+                }
+                true
+            })
+            .collect()
+    }
+
+    /// Get video tracks that should be rendered (respects visible + solo logic).
+    pub fn visible_video_tracks(&self) -> Vec<&Track> {
+        let any_solo = self.tracks.iter().any(|t| t.solo && t.kind == TrackKind::Video);
+        self.tracks
+            .iter()
+            .filter(|t| {
+                if t.kind != TrackKind::Video {
+                    return false;
+                }
+                if !t.visible {
+                    return false;
+                }
+                if any_solo {
+                    return t.solo;
+                }
+                true
+            })
+            .collect()
     }
 }
 

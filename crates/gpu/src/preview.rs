@@ -17,6 +17,9 @@ impl PreviewLoop {
     ///
     /// Reads playback position from `position_rx`, renders frames, and sends
     /// them to `frame_tx`. Drops frames if the consumer falls behind.
+    ///
+    /// If `audio_preview` is provided, audio for each frame's time window is
+    /// decoded and fed to the audio output.
     pub fn start(
         renderer: Arc<Renderer>,
         timeline: Arc<Timeline>,
@@ -24,6 +27,7 @@ impl PreviewLoop {
         frame_source: Arc<dyn FrameSource>,
         position_rx: watch::Receiver<PlaybackPosition>,
         frame_tx: mpsc::Sender<GpuFrame>,
+        audio_preview: Option<Arc<tazama_media::AudioPreview>>,
     ) -> Self {
         let handle = tokio::spawn(async move {
             let fps = frame_rate_to_fps(&settings.frame_rate);
@@ -34,6 +38,12 @@ impl PreviewLoop {
                 interval.tick().await;
 
                 let position = position_rx.borrow().clone();
+
+                // Update audio preview playing state
+                if let Some(ref audio) = audio_preview {
+                    audio.set_playing(position.state == PlaybackState::Playing);
+                }
+
                 if position.state == PlaybackState::Stopped {
                     continue;
                 }

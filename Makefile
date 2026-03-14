@@ -9,7 +9,7 @@ YELLOW := \033[33m
 NC := \033[0m
 
 .PHONY: all help build release clean run dev \
-        test test-unit test-coverage \
+        test test-unit test-mcp test-coverage \
         fmt format-check lint check \
         security-scan docs compile-shaders \
         ci-build ci-test ci-docs \
@@ -33,6 +33,7 @@ help:
 	@echo "$(GREEN)Test:$(NC)"
 	@echo "  $(YELLOW)test$(NC)           - Run all tests"
 	@echo "  $(YELLOW)test-unit$(NC)      - Run unit tests only"
+	@echo "  $(YELLOW)test-mcp$(NC)       - Run MCP integration tests"
 	@echo "  $(YELLOW)test-coverage$(NC)  - Run tests with coverage (65% threshold)"
 	@echo ""
 	@echo "$(GREEN)Quality:$(NC)"
@@ -78,6 +79,9 @@ test:
 
 test-unit:
 	$(CARGO) test --workspace --lib
+
+test-mcp:
+	$(CARGO) test -p tazama-mcp
 
 test-coverage:
 	$(CARGO) install cargo-tarpaulin --locked 2>/dev/null || true

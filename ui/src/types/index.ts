@@ -21,9 +21,20 @@ export interface FrameRate {
   denominator: number;
 }
 
+// Marker types
+export type MarkerColor = "Red" | "Orange" | "Yellow" | "Green" | "Blue" | "Purple" | "White";
+
+export interface Marker {
+  id: string;
+  name: string;
+  frame: number;
+  color: MarkerColor;
+}
+
 // Timeline types
 export interface Timeline {
   tracks: Track[];
+  markers: Marker[];
 }
 
 export interface Track {
@@ -33,6 +44,8 @@ export interface Track {
   clips: Clip[];
   muted: boolean;
   locked: boolean;
+  solo: boolean;
+  visible: boolean;
 }
 
 export type TrackKind = "Video" | "Audio";

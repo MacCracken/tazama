@@ -1,0 +1,65 @@
+[package]
+name = "tazama"
+version = "2026.3.13"
+description = "AI-native non-linear video editor"
+groups = ["creative", "video"]
+license = "AGPL-3.0"
+repository = "https://github.com/anomalyco/tazama"
+
+[depends]
+runtime = [
+    "gstreamer",
+    "gst-plugins-base",
+    "gst-plugins-good",
+    "pipewire",
+    "alsa-lib",
+    "vulkan-icd-loader",
+    "sqlite",
+    "webkit2gtk",
+]
+build = [
+    "rust",
+    "nodejs",
+    "vulkan-headers",
+    "pkg-config",
+]
+
+[marketplace]
+category = "creative/video"
+runtime = "native-binary"
+
+[marketplace.sandbox]
+seccomp_mode = "desktop"
+
+[[marketplace.sandbox.landlock]]
+path = "~/.local/share/tazama/"
+access = "rw"
+
+[[marketplace.sandbox.landlock]]
+path = "/run/user/*/pipewire-0"
+access = "rw"
+
+[[marketplace.sandbox.landlock]]
+path = "/tmp/.X11-unix/"
+access = "ro"
+
+[[marketplace.sandbox.landlock]]
+path = "/dev/dri/"
+access = "rw"
+
+[build]
+commands = [
+    "cargo build --release --workspace",
+    "cd ui && npm ci && npm run build",
+]
+
+[install]
+binaries = [
+    { src = "target/release/tazama", dst = "bin/tazama" },
+    { src = "target/release/tazama-mcp", dst = "bin/tazama-mcp" },
+]
+assets = [
+    { src = "ui/dist/", dst = "share/tazama/ui/" },
+    { src = ".agnos-agent/", dst = "share/tazama/.agnos-agent/" },
+]
+desktop_entry = "tazama.desktop"

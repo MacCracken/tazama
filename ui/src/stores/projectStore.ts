@@ -6,6 +6,8 @@ import type {
   TrackKind,
   Clip,
   Effect,
+  Marker,
+  MarkerColor,
 } from "../types";
 import * as commands from "../ipc/commands";
 import { useHistoryStore } from "./historyStore";
@@ -51,6 +53,14 @@ interface ProjectState {
   setClipOpacity: (trackId: string, clipId: string, opacity: number) => void;
   setClipVolume: (trackId: string, clipId: string, volume: number) => void;
   renameClip: (trackId: string, clipId: string, name: string) => void;
+
+  // Marker operations
+  addMarker: (name: string, frame: number, color: MarkerColor) => void;
+  removeMarker: (markerId: string) => void;
+
+  // Track solo/visible
+  toggleTrackSolo: (trackId: string) => void;
+  toggleTrackVisible: (trackId: string) => void;
 
   // Effect operations
   addEffect: (trackId: string, clipId: string, effect: Effect) => void;
@@ -125,6 +135,39 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     });
   },
 
+  addMarker: (name, frame, color) => {
+    get()._mutate((p) => {
+      const marker: Marker = {
+        id: crypto.randomUUID(),
+        name,
+        frame,
+        color,
+      };
+      p.timeline.markers.push(marker);
+      p.timeline.markers.sort((a, b) => a.frame - b.frame);
+    });
+  },
+
+  removeMarker: (markerId) => {
+    get()._mutate((p) => {
+      p.timeline.markers = p.timeline.markers.filter((m) => m.id !== markerId);
+    });
+  },
+
+  toggleTrackSolo: (trackId) => {
+    get()._mutate((p) => {
+      const track = p.timeline.tracks.find((t) => t.id === trackId);
+      if (track) track.solo = !track.solo;
+    });
+  },
+
+  toggleTrackVisible: (trackId) => {
+    get()._mutate((p) => {
+      const track = p.timeline.tracks.find((t) => t.id === trackId);
+      if (track) track.visible = !track.visible;
+    });
+  },
+
   addTrack: (name, kind) => {
     get()._mutate((p) => {
       const track: Track = {
@@ -134,6 +177,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         clips: [],
         muted: false,
         locked: false,
+        solo: false,
+        visible: true,
       };
       p.timeline.tracks.push(track);
     });

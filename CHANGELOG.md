@@ -2,6 +2,41 @@
 
 ## 2026.3.13
 
+### Phase 5 — MCP & AGNOS Integration
+
+#### Core Types (`tazama-core`)
+- `Marker` type with `MarkerId`, `MarkerColor` (Red/Orange/Yellow/Green/Blue/Purple/White)
+- `Timeline::markers` field with `add_marker()`, `remove_marker()`, `markers_in_range()` methods
+- `Track::solo` and `Track::visible` fields (default false/true)
+- `Timeline::audible_tracks()` and `visible_video_tracks()` helpers (solo/mute logic)
+- `EditCommand::AddMarker` and `RemoveMarker` variants with full undo/redo support
+
+#### Audio Preview (`tazama-media`)
+- CPAL-based `AudioPreview` for real-time audio playback via PipeWire/ALSA
+- `VecDeque<f32>` ring buffer behind `Arc<Mutex<>>` for preview (non-RT-critical)
+- `feed()`, `seek()`, `set_playing()` API for preview loop integration
+
+#### GPU Renderer (`tazama-gpu`)
+- `collect_active_clips()` respects `!track.visible` and solo logic
+- `apply_transitions()` respects visible and solo flags
+- `PreviewLoop::start()` accepts optional `Arc<AudioPreview>` for audio output
+
+#### MCP Server (`tazama-mcp`)
+- `tazama_add_marker` tool — add named markers at frame positions with color
+- 6 tools total (was 5)
+- MCP integration test suite (7 tests): initialize, tools/list, create_project, get_timeline, add_marker, apply_effect_no_project, unknown_method
+
+#### AGNOS & Marketplace
+- `.agnos-agent/manifest.toml` with 5 agnoshi intents for AI tool discovery
+- `recipes/marketplace/tazama.toml` — ark package recipe with sandbox rules
+
+#### Frontend (`ui/`)
+- `Marker` and `MarkerColor` TypeScript types
+- `Timeline.markers`, `Track.solo`, `Track.visible` fields
+- `addMarker`, `removeMarker`, `toggleTrackSolo`, `toggleTrackVisible` store actions
+- Solo (S) and visible (eye) buttons in TrackHeader
+- Colored triangle marker indicators on TimelineRuler
+
 ### Phase 4 — Desktop UI
 
 #### Frontend Scaffold

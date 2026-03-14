@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::clip::{Clip, ClipId};
 use crate::effect::Effect;
+use crate::marker::Marker;
 use crate::timeline::{Timeline, TimelineError, TrackId, TrackKind};
 
 /// Each variant stores enough state for both `apply()` and `undo()`.
@@ -57,6 +58,12 @@ pub enum EditCommand {
         track_id: TrackId,
         clip_id: ClipId,
         effect: Effect,
+    },
+    AddMarker {
+        marker: Marker,
+    },
+    RemoveMarker {
+        marker: Marker,
     },
 }
 
@@ -148,6 +155,14 @@ impl EditCommand {
                     .find_clip_mut(*clip_id)
                     .ok_or(TimelineError::ClipNotFound(*clip_id))?;
                 clip.effects.retain(|e| e.id != effect.id);
+                Ok(())
+            }
+            EditCommand::AddMarker { marker } => {
+                timeline.add_marker(marker.clone());
+                Ok(())
+            }
+            EditCommand::RemoveMarker { marker } => {
+                timeline.remove_marker(marker.id);
                 Ok(())
             }
         }
@@ -251,6 +266,14 @@ impl EditCommand {
                     .find_clip_mut(*clip_id)
                     .ok_or(TimelineError::ClipNotFound(*clip_id))?;
                 clip.effects.push(effect.clone());
+                Ok(())
+            }
+            EditCommand::AddMarker { marker } => {
+                timeline.remove_marker(marker.id);
+                Ok(())
+            }
+            EditCommand::RemoveMarker { marker } => {
+                timeline.add_marker(marker.clone());
                 Ok(())
             }
         }

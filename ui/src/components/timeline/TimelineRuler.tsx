@@ -2,12 +2,24 @@ import { useCallback } from "react";
 import { useUIStore } from "../../stores/uiStore";
 import { usePlaybackStore } from "../../stores/playbackStore";
 import { useProjectStore } from "../../stores/projectStore";
+import type { MarkerColor } from "../../types";
+
+const MARKER_COLORS: Record<MarkerColor, string> = {
+  Red: "#ef4444",
+  Orange: "#f97316",
+  Yellow: "#eab308",
+  Green: "#22c55e",
+  Blue: "#3b82f6",
+  Purple: "#a855f7",
+  White: "#f5f5f5",
+};
 
 export function TimelineRuler() {
   const zoom = useUIStore((s) => s.zoom);
   const scrollX = useUIStore((s) => s.scrollX);
   const seek = usePlaybackStore((s) => s.seek);
   const project = useProjectStore((s) => s.project);
+  const markers = project?.timeline.markers ?? [];
 
   const fps = project
     ? project.settings.frame_rate.numerator /
@@ -84,6 +96,29 @@ export function TimelineRuler() {
           )}
         </div>
       ))}
+      {markers.map((marker) => {
+        const x = marker.frame * zoom - scrollX;
+        if (x < -10 || x > totalWidth) return null;
+        return (
+          <div
+            key={marker.id}
+            className="absolute"
+            style={{ left: x, top: 0 }}
+            title={marker.name}
+          >
+            <div
+              style={{
+                width: 0,
+                height: 0,
+                borderLeft: "5px solid transparent",
+                borderRight: "5px solid transparent",
+                borderTop: `8px solid ${MARKER_COLORS[marker.color]}`,
+                transform: "translateX(-5px)",
+              }}
+            />
+          </div>
+        );
+      })}
     </div>
   );
 }

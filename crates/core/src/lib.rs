@@ -1,6 +1,7 @@
 pub mod clip;
 pub mod command;
 pub mod effect;
+pub mod marker;
 pub mod media_info;
 pub mod playback;
 pub mod project;
@@ -9,6 +10,7 @@ pub mod timeline;
 pub use clip::{Clip, ClipId, ClipKind, MediaRef};
 pub use command::{EditCommand, EditHistory};
 pub use effect::{Effect, EffectId, EffectKind, TransitionKind};
+pub use marker::{Marker, MarkerColor, MarkerId};
 pub use media_info::{
     AudioStreamInfo, Codec, ContainerFormat, MediaInfo, ThumbnailSpec, VideoStreamInfo,
     WaveformData,

@@ -9,6 +9,20 @@ Tazama is an AI-native non-linear video editor. MVP target: import media, arrang
 - **Phase 2** — Functional Editing Backend (clip ops, undo/redo, SQLite persistence, MCP tool dispatch)
 - **Phase 3** — GPU Rendering (Vulkan compute pipelines, 6 effect shaders, preview/export render loops)
 - **Phase 4** — Desktop UI (React 19 + Vite + Tailwind v4, full NLE interface)
+- **Phase 5** — MCP & AGNOS Integration (markers, audio preview, solo/visible, agnoshi intents, marketplace)
+
+## Phase 5 — MCP & AGNOS Integration (complete)
+
+Wire up remaining MCP features, add agnoshi intents, package for marketplace.
+
+- [x] PipeWire audio monitoring (CPAL-based preview via ALSA/PipeWire plugin layer)
+- [x] Markers as first-class timeline type with undo/redo support
+- [x] Track solo/visible fields with GPU renderer and audio preview integration
+- [x] `tazama_add_marker` MCP tool (6 tools total)
+- [x] 5 agnoshi intents ("edit video", "add clip", "apply effect", "export project", "show timeline")
+- [x] `.agnos-agent/manifest.toml` bundle for marketplace
+- [x] Marketplace recipe (`recipes/marketplace/tazama.toml`)
+- [x] MCP integration test suite (7 tests, spawns binary, tests JSON-RPC protocol)
 
 ## Phase 4 — Desktop UI (complete)
 
@@ -24,18 +38,6 @@ Tauri v2 + React 19 / TypeScript / Vite / Tailwind v4 / Zustand frontend.
 - [x] Export dialog (format, resolution, output path, progress bar)
 - [x] Project management (new, open, save, recent projects, welcome screen)
 - [x] Theming (dark theme with CSS custom properties)
-
-## Phase 5 — MCP & AGNOS Integration
-
-Wire up remaining MCP features, add agnoshi intents, package for marketplace.
-
-- [ ] PipeWire audio monitoring (route preview audio through PipeWire)
-- [ ] Markers and regions (user-placed markers, in/out points)
-- [ ] Multi-track compositing order (track stacking, per-track visibility/solo)
-- [ ] 5 agnoshi intents ("edit video", "add clip", "apply effect", "export project", "show timeline")
-- [ ] `.agnos-agent` bundle (agent manifest for marketplace)
-- [ ] Marketplace recipe (`recipes/marketplace/tazama.toml` for ark)
-- [ ] MCP integration test suite
 
 ---
 

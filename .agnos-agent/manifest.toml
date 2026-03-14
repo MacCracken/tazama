@@ -1,0 +1,62 @@
+[agent]
+name = "tazama"
+version = "2026.3.13"
+description = "AI-native non-linear video editor — create, edit, and export video projects"
+mcp_server = "tazama-mcp"
+mcp_transport = "stdio"
+
+[[intents]]
+name = "edit video"
+description = "Create and edit a video project with clips, effects, and timeline arrangement"
+tools = ["tazama_create_project", "tazama_add_clip", "tazama_apply_effect", "tazama_get_timeline"]
+examples = [
+    "edit this video for me",
+    "create a video project",
+    "put together a video from these clips",
+    "arrange these clips on a timeline",
+]
+
+[[intents]]
+name = "add clip"
+description = "Add a video or audio clip to the timeline"
+tools = ["tazama_add_clip"]
+examples = [
+    "add this clip to the timeline",
+    "put this video on track 1",
+    "import this media file",
+    "add audio to the project",
+]
+
+[[intents]]
+name = "apply effect"
+description = "Apply a visual or audio effect to a clip"
+tools = ["tazama_apply_effect"]
+examples = [
+    "add a color grade to this clip",
+    "crop this video",
+    "speed up this clip",
+    "add a fade in",
+    "change the volume",
+]
+
+[[intents]]
+name = "export project"
+description = "Export the current project to a video file"
+tools = ["tazama_export"]
+examples = [
+    "export this video",
+    "render the project to mp4",
+    "save the video as webm",
+    "export to file",
+]
+
+[[intents]]
+name = "show timeline"
+description = "Display the current timeline state with all tracks and clips"
+tools = ["tazama_get_timeline"]
+examples = [
+    "show me the timeline",
+    "what's on the timeline",
+    "list all clips",
+    "get the project state",
+]

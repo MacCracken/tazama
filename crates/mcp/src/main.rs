@@ -6,8 +6,8 @@ use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader};
 use uuid::Uuid;
 
 use tazama_core::{
-    Clip, ClipId, ClipKind, EditCommand, EditHistory, Effect, EffectKind, MediaRef, Project,
-    ProjectSettings, Timeline, Track, TrackKind,
+    Clip, ClipId, ClipKind, EditCommand, EditHistory, Effect, EffectKind, Marker, MarkerColor,
+    MediaRef, Project, ProjectSettings, Timeline, Track, TrackKind,
 };
 
 /// MCP tools exposed by Tazama:
@@ -195,6 +195,19 @@ async fn handle_request(request: &Value, state: &mut ServerState) -> Value {
                             },
                             "required": ["output_path"]
                         }
+                    },
+                    {
+                        "name": "tazama_add_marker",
+                        "description": "Add a named marker at a specific frame on the timeline",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "name": { "type": "string", "description": "Marker name/label" },
+                                "frame": { "type": "integer", "description": "Frame position" },
+                                "color": { "type": "string", "enum": ["red", "orange", "yellow", "green", "blue", "purple", "white"], "default": "blue" }
+                            },
+                            "required": ["name", "frame"]
+                        }
                     }
                 ]
             }
@@ -223,6 +236,7 @@ async fn handle_tool_call(id: &Value, tool: &str, args: &Value, state: &mut Serv
         "tazama_apply_effect" => handle_apply_effect(id, args, state),
         "tazama_get_timeline" => handle_get_timeline(id, state),
         "tazama_export" => handle_export(id, args, state).await,
+        "tazama_add_marker" => handle_add_marker(id, args, state),
         _ => mcp_error(id, format!("Unknown tool: {tool}")),
     }
 }
@@ -451,6 +465,56 @@ async fn handle_export(id: &Value, args: &Value, state: &ServerState) -> Value {
             format!("Export started to {output_path} ({format_str})"),
         ),
         Err(e) => mcp_error(id, format!("Export failed: {e}")),
+    }
+}
+
+fn handle_add_marker(id: &Value, args: &Value, state: &mut ServerState) -> Value {
+    if state.project.is_none() {
+        return mcp_error(id, "No project loaded. Use tazama_create_project first.");
+    }
+
+    let name = match args.get("name").and_then(|n| n.as_str()) {
+        Some(n) => n,
+        None => return mcp_error(id, "Missing required parameter: name"),
+    };
+
+    let frame = match args.get("frame").and_then(|f| f.as_u64()) {
+        Some(f) => f,
+        None => return mcp_error(id, "Missing required parameter: frame"),
+    };
+
+    let color_str = args
+        .get("color")
+        .and_then(|c| c.as_str())
+        .unwrap_or("blue");
+
+    let color = match color_str {
+        "red" => MarkerColor::Red,
+        "orange" => MarkerColor::Orange,
+        "yellow" => MarkerColor::Yellow,
+        "green" => MarkerColor::Green,
+        "blue" => MarkerColor::Blue,
+        "purple" => MarkerColor::Purple,
+        "white" => MarkerColor::White,
+        _ => return mcp_error(id, format!("Unknown marker color: {color_str}")),
+    };
+
+    let marker = Marker::new(name, frame, color);
+    let marker_id = marker.id.0.to_string();
+
+    let cmd = EditCommand::AddMarker {
+        marker,
+    };
+
+    match state
+        .history
+        .execute(cmd, &mut state.project.as_mut().unwrap().timeline)
+    {
+        Ok(()) => mcp_success(
+            id,
+            format!("Added marker '{name}' at frame {frame} (ID: {marker_id})"),
+        ),
+        Err(e) => mcp_error(id, format!("Failed to add marker: {e}")),
     }
 }
 

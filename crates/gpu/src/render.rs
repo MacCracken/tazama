@@ -281,9 +281,17 @@ impl Renderer {
         let height = settings.height;
         let frame_size = GpuBuffer::frame_buffer_size(width, height);
 
+        let any_video_solo = timeline
+            .tracks
+            .iter()
+            .any(|t| t.solo && t.kind == TrackKind::Video);
+
         // Find clips that have transition effects active at this frame
         for track in &timeline.tracks {
-            if track.muted || track.kind != TrackKind::Video {
+            if track.muted || track.kind != TrackKind::Video || !track.visible {
+                continue;
+            }
+            if any_video_solo && !track.solo {
                 continue;
             }
 
@@ -674,11 +682,20 @@ struct ActiveClip {
 }
 
 /// Collect video clips active at the given frame, ordered bottom-to-top.
+/// Respects muted, visible, and solo flags.
 fn collect_active_clips(timeline: &Timeline, frame_index: u64) -> Vec<ActiveClip> {
     let mut clips = Vec::new();
 
+    let any_video_solo = timeline
+        .tracks
+        .iter()
+        .any(|t| t.solo && t.kind == TrackKind::Video);
+
     for track in &timeline.tracks {
-        if track.muted || track.kind != TrackKind::Video {
+        if track.muted || track.kind != TrackKind::Video || !track.visible {
+            continue;
+        }
+        if any_video_solo && !track.solo {
             continue;
         }
 

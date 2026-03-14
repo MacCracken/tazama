@@ -9,6 +9,8 @@ interface TrackHeaderProps {
 export function TrackHeader({ track }: TrackHeaderProps) {
   const toggleMute = useProjectStore((s) => s.toggleTrackMute);
   const toggleLock = useProjectStore((s) => s.toggleTrackLock);
+  const toggleSolo = useProjectStore((s) => s.toggleTrackSolo);
+  const toggleVisible = useProjectStore((s) => s.toggleTrackVisible);
   const selectTrack = useUIStore((s) => s.selectTrack);
   const selectedTrackId = useUIStore((s) => s.selectedTrackId);
   const isSelected = selectedTrackId === track.id;
@@ -44,6 +46,19 @@ export function TrackHeader({ track }: TrackHeaderProps) {
       <button
         onClick={(e) => {
           e.stopPropagation();
+          toggleSolo(track.id);
+        }}
+        className="text-[10px] px-1 rounded"
+        style={{
+          color: track.solo ? "var(--accent)" : "var(--text-muted)",
+        }}
+        title={track.solo ? "Unsolo" : "Solo"}
+      >
+        S
+      </button>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
           toggleMute(track.id);
         }}
         className="text-[10px] px-1 rounded"
@@ -53,6 +68,19 @@ export function TrackHeader({ track }: TrackHeaderProps) {
         title={track.muted ? "Unmute" : "Mute"}
       >
         M
+      </button>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          toggleVisible(track.id);
+        }}
+        className="text-[10px] px-1 rounded"
+        style={{
+          color: track.visible ? "var(--text-muted)" : "var(--error)",
+        }}
+        title={track.visible ? "Hide" : "Show"}
+      >
+        {track.visible ? "\u{1F441}" : "\u{1F441}\u{200D}\u{1F5E8}"}
       </button>
       <button
         onClick={(e) => {

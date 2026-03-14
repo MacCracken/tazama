@@ -1,6 +1,7 @@
 pub mod decode;
 pub mod error;
 pub mod export;
+pub mod playback;
 pub mod probe;
 pub mod thumbnail;
 pub mod waveform;
@@ -10,6 +11,7 @@ use std::sync::Once;
 pub use decode::{AudioBuffer, DecoderConfig, FrameRange, VideoFrame};
 pub use error::MediaPipelineError;
 pub use export::{ExportConfig, ExportFormat, ExportProgress};
+pub use playback::AudioPreview;
 
 static GST_INIT: Once = Once::new();
 
