@@ -9,6 +9,7 @@ AI-native non-linear video editor built with Rust + Vulkan.
 | Crate | Purpose |
 |-------|---------|
 | `tazama-core` | Timeline model, clips, effects — pure logic, no I/O |
+| `tazama-media` | GStreamer media pipeline (probe, decode, encode, thumbnails) |
 | `tazama-storage` | Project persistence, media asset management (SQLite) |
 | `tazama-gpu` | Vulkan compute pipelines for rendering and effects |
 | `tazama` (app) | Tauri v2 desktop shell |

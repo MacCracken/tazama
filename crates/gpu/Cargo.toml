@@ -9,6 +9,8 @@ license.workspace = true
 tazama-core = { path = "../core" }
 ash.workspace = true
 gpu-allocator.workspace = true
+bytemuck.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 bytes.workspace = true
+tokio.workspace = true

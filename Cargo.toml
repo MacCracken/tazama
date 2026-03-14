@@ -59,3 +59,4 @@ gstreamer-pbutils = "0.23"
 # GPU
 ash = "0.38"
 gpu-allocator = { version = "0.27", features = ["vulkan"] }
+bytemuck = { version = "1", features = ["derive"] }

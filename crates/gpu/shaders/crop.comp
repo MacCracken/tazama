@@ -1,0 +1,41 @@
+#version 450
+
+layout(local_size_x = 256) in;
+
+layout(set = 0, binding = 0) buffer InputBuffer {
+    uint pixels_in[];
+};
+
+layout(set = 0, binding = 1) buffer OutputBuffer {
+    uint pixels_out[];
+};
+
+layout(push_constant) uniform PushConstants {
+    uint src_width;
+    uint src_height;
+    uint dst_width;
+    uint dst_height;
+    uint left;
+    uint top;
+    uint right;
+    uint bottom;
+};
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    uint total = dst_width * dst_height;
+    if (idx >= total) return;
+
+    uint dst_x = idx % dst_width;
+    uint dst_y = idx / dst_width;
+
+    uint src_x = dst_x + left;
+    uint src_y = dst_y + top;
+
+    if (src_x < src_width && src_y < src_height) {
+        uint src_idx = src_y * src_width + src_x;
+        pixels_out[idx] = pixels_in[src_idx];
+    } else {
+        pixels_out[idx] = 0u; // transparent black
+    }
+}

@@ -11,7 +11,7 @@ NC := \033[0m
 .PHONY: all help build release clean run dev \
         test test-unit test-coverage \
         fmt format-check lint check \
-        security-scan docs \
+        security-scan docs compile-shaders \
         ci-build ci-test ci-docs \
         version-sync version-bump frontend
 
@@ -102,6 +102,11 @@ check: format-check lint test
 security-scan:
 	$(CARGO) install cargo-audit --locked 2>/dev/null || true
 	$(CARGO) audit
+
+# --- Shaders ---
+
+compile-shaders:
+	./scripts/compile_shaders.sh
 
 # --- Docs ---
 

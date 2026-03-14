@@ -1,0 +1,42 @@
+#version 450
+
+layout(local_size_x = 256) in;
+
+layout(set = 0, binding = 0) buffer InputBuffer {
+    uint pixels_in[];
+};
+
+layout(set = 0, binding = 1) buffer OutputBuffer {
+    uint pixels_out[];
+};
+
+layout(push_constant) uniform PushConstants {
+    uint width;
+    uint height;
+    float progress; // 0.0 = black, 1.0 = fully visible
+    uint _pad;
+};
+
+vec4 unpack_rgba(uint packed) {
+    return vec4(
+        float(packed & 0xFFu) / 255.0,
+        float((packed >> 8u) & 0xFFu) / 255.0,
+        float((packed >> 16u) & 0xFFu) / 255.0,
+        float((packed >> 24u) & 0xFFu) / 255.0
+    );
+}
+
+uint pack_rgba(vec4 c) {
+    uvec4 u = uvec4(clamp(c * 255.0, 0.0, 255.0));
+    return u.x | (u.y << 8u) | (u.z << 16u) | (u.w << 24u);
+}
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    uint total = width * height;
+    if (idx >= total) return;
+
+    vec4 color = unpack_rgba(pixels_in[idx]);
+    color.rgb *= progress;
+    pixels_out[idx] = pack_rgba(color);
+}

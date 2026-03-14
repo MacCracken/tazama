@@ -1,0 +1,38 @@
+#version 450
+
+layout(local_size_x = 256) in;
+
+layout(set = 0, binding = 0) buffer BufferA {
+    uint pixels_a[];
+};
+
+layout(set = 0, binding = 1) buffer BufferB {
+    uint pixels_b[];
+};
+
+layout(set = 0, binding = 2) buffer OutputBuffer {
+    uint pixels_out[];
+};
+
+layout(push_constant) uniform PushConstants {
+    uint width;
+    uint height;
+    float progress; // 0.0 = fully A, 1.0 = fully B
+    uint _pad;
+};
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    uint total = width * height;
+    if (idx >= total) return;
+
+    uint x = idx % width;
+    float threshold = progress * float(width);
+
+    // Left-to-right hard wipe
+    if (float(x) < threshold) {
+        pixels_out[idx] = pixels_b[idx];
+    } else {
+        pixels_out[idx] = pixels_a[idx];
+    }
+}

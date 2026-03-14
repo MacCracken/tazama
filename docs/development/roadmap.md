@@ -5,48 +5,9 @@ Tazama is an AI-native non-linear video editor. MVP target: import media, arrang
 ## Completed Phases
 
 - **Phase 0** — Scaffold (workspace, core types, storage/gpu/mcp stubs, Makefile, ADR-001)
-
----
-
-## Phase 1 — Media Pipeline
-
-GStreamer integration for decoding, encoding, and media inspection.
-
-- [ ] Media probe / inspection (`gstreamer-pbutils` discoverer — duration, resolution, codec, frame rate)
-- [ ] Video decode pipeline (file → demux → decode → raw frames; H.264, H.265, VP9, AV1)
-- [ ] Audio decode pipeline (decode to raw PCM; AAC, Opus, FLAC, MP3)
-- [ ] Thumbnail generation (extract keyframes at intervals for timeline UI)
-- [ ] Audio waveform extraction (generate waveform data for timeline audio tracks)
-- [ ] Export pipeline (raw frames → encode → mux → file; MP4 H.264+AAC, WebM VP9+Opus)
-- [ ] PipeWire audio monitoring (route preview audio through PipeWire for playback)
-- [ ] Core tests (unit tests for all core types — timeline ops, clip manipulation, effect params)
-
-## Phase 2 — Timeline Engine
-
-Clip operations, playback sequencing, and the in-memory editing model.
-
-- [ ] Clip trimming (adjust source_offset and duration, ripple vs. rolling trim)
-- [ ] Clip splitting (split at frame position into two clips)
-- [ ] Clip move / reorder (between positions, between tracks, snap-to-grid)
-- [ ] Overlap detection (prevent/handle overlaps on same track)
-- [ ] Undo/redo system (command pattern — every edit is reversible)
-- [ ] Playback clock (frame-accurate position, play/pause/seek/scrub)
-- [ ] Multi-track compositing order (track stacking, per-track visibility/mute/solo)
-- [ ] Markers and regions (user-placed markers, in/out points)
-
-## Phase 3 — GPU Rendering
-
-Vulkan compute pipelines for real-time preview and final export rendering.
-
-- [ ] Vulkan initialization (instance, device selection, compute queue via ash)
-- [ ] Frame upload/download (CPU ↔ GPU buffer transfers for decoded frames)
-- [ ] Compositing shader (alpha composite multiple tracks)
-- [ ] Color grading shader (brightness, contrast, saturation, temperature, lift/gamma/gain)
-- [ ] Transition shaders (dissolve, wipe, fade between adjacent clips)
-- [ ] Crop / transform (position, scale, rotation, crop per clip)
-- [ ] Preview render loop (real-time frame output at project frame rate)
-- [ ] Export render loop (offline rendering — all frames → encode pipeline)
-- [ ] Software fallback (CPU-based rendering via lavapipe for systems without GPU)
+- **Phase 1** — Media Pipeline (GStreamer probe, decode, thumbnails, waveforms, export)
+- **Phase 2** — Functional Editing Backend (clip ops, undo/redo, SQLite persistence, MCP tool dispatch)
+- **Phase 3** — GPU Rendering (Vulkan compute pipelines, 6 effect shaders, preview/export render loops)
 
 ## Phase 4 — Desktop UI
 
@@ -65,13 +26,11 @@ Tauri v2 + React/TypeScript frontend.
 
 ## Phase 5 — MCP & AGNOS Integration
 
-Wire up the 5 MCP tools, add agnoshi intents, package for marketplace.
+Wire up remaining MCP features, add agnoshi intents, package for marketplace.
 
-- [ ] `tazama_create_project` implementation
-- [ ] `tazama_add_clip` implementation
-- [ ] `tazama_add_effect` implementation
-- [ ] `tazama_get_timeline` implementation
-- [ ] `tazama_export` implementation
+- [ ] PipeWire audio monitoring (route preview audio through PipeWire)
+- [ ] Markers and regions (user-placed markers, in/out points)
+- [ ] Multi-track compositing order (track stacking, per-track visibility/solo)
 - [ ] 5 agnoshi intents ("edit video", "add clip", "apply effect", "export project", "show timeline")
 - [ ] `.agnos-agent` bundle (agent manifest for marketplace)
 - [ ] Marketplace recipe (`recipes/marketplace/tazama.toml` for ark)
