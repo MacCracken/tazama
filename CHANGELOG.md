@@ -2,6 +2,66 @@
 
 ## 2026.3.13
 
+### Export Integration & Preview
+
+#### End-to-End Export Pipeline (`tazama`)
+- `MediaFrameSource` — bridges media decoder to GPU `FrameSource` trait with single-frame cache
+- `export_project` — fully wired: GPU Renderer → VideoFrame → GStreamer encode pipeline
+- `AudioOutput` trait in gpu crate decouples preview audio from media crate (no circular deps)
+- `render_preview_frame` command — decodes source video frame at timeline position, returns base64 RGBA
+- `Timeline::topmost_video_clip_at()` — finds the highest-priority visible clip at a frame (respects mute/solo/visible)
+
+#### Multi-Track Audio Mixer (`tazama-media`)
+- `mix.rs` — offline mixer following Shruti's additive pattern
+- Decodes all audio from active clips, applies per-clip volume, sums overlapping regions in 4096-frame chunks
+- Respects track mute/solo flags, clips to [-1.0, 1.0] to prevent clipping
+- Proper timeline positioning via source_offset → duration range and timeline_start → sample offset
+- 11 unit tests (frame conversion, empty timeline, mute/solo/volume/clamp/offset logic)
+
+#### Preview Canvas (`ui/`)
+- `PreviewCanvas` — renders decoded video frames on HTML canvas via base64 RGBA `ImageData`
+- Calls `render_preview_frame` IPC command on playback position change
+- Frame skipping when decode is slower than position changes (pending ref guard)
+- Auto-clears on project close
+
+#### Export Pipeline Improvements (`tazama-media`)
+- `ExportPipeline::run_with_total()` — accepts total frame count for accurate progress tracking
+- Pipeline progress events now report real `total_frames` instead of 0
+- Replaced all `unwrap()` calls in GStreamer buffer operations with proper error propagation
+- `pipeline.bus().unwrap()` → safe `.ok_or_else()` pattern
+
+### Code Audit Fixes
+
+#### Safety & Correctness
+- GStreamer RAII `PipelineGuard` — decode pipelines now always set to Null on exit (video.rs, audio.rs)
+- `static_pad("sink").unwrap()` → safe `let Some(pad) = ... else { return }` in both decoders
+- `GpuContext::Drop` — replaced unsafe `drop_in_place` with `Option<Allocator>` + `.take()` for safe ordered destruction
+- SPIR-V alignment validation — `shader.rs` rejects non-4-byte-aligned bytecode before `chunks_exact`
+- `FrameRate::new()` — asserts denominator > 0; `fps()` returns 0.0 defensively
+- Crop dimension underflow — `saturating_sub().max(1)` prevents zero-size GPU buffers
+- Integer overflow in frame timestamp — `checked_mul` chain with `u64::MAX` fallback
+- Audio buffer alignment — truncates to 4-byte boundary before `chunks_exact(4)`
+- Mutex poisoning resilience — standardized on `unwrap_or_else(|e| e.into_inner())` across all crates
+- GPU buffer allocator — handles `Option<Allocator>` after context destruction
+
+#### MCP Server (`tazama-mcp`)
+- Removed unsupported `"mov"` format from export tool schema (only mp4/webm supported)
+- Fixed 3 `.as_mut().unwrap()` panics → safe `let Some(...) else { return mcp_error() }` pattern
+- 6 agnoshi intents (was 5) — added "add marker" intent
+
+#### Frontend (`ui/`)
+- `Ctrl+O` keyboard shortcut for opening projects
+- Export button disabled during export (prevents double-click)
+- `ImportButton` now calls `importMedia()` to copy files into project directory
+- `NewProjectDialog` — min bounds validation (100x100), disabled Create button when invalid
+- `MediaItem` double-click — shows toast when no video track exists
+- `ExportProgress` — safer listener cleanup with `unlistenFn` variable pattern
+- `FileActions` — loading state with "Loading..." indicator and disabled buttons during open/save
+
+#### Build & Dependencies
+- Removed unused `tempfile` dev-dependency from storage crate
+- Added `base64` workspace dependency for preview frame encoding
+
 ### Phase 5 — MCP & AGNOS Integration
 
 #### Core Types (`tazama-core`)

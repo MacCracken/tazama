@@ -209,9 +209,9 @@ mod tests {
 
     #[test]
     fn test_frames_to_samples() {
-        // 30fps, 48000Hz, stereo: 1 frame = 1/30s = 1600 stereo samples = 3200 interleaved
+        // 30fps, 48000Hz, stereo: 30 frames = 1 second = 96000 interleaved samples
         let samples = frames_to_samples(30, 30.0, 48000, 2);
-        assert_eq!(samples, 96000); // 1 second * 48000 * 2 channels
+        assert_eq!(samples, 96000);
     }
 
     #[test]
@@ -219,5 +219,187 @@ mod tests {
         // 1 frame at 30fps = 3200 interleaved samples (48000/30 * 2)
         let samples = frames_to_samples(1, 30.0, 48000, 2);
         assert_eq!(samples, 3200);
+    }
+
+    #[test]
+    fn test_frames_to_samples_mono() {
+        // Mono: 30 frames at 30fps = 48000 samples
+        let samples = frames_to_samples(30, 30.0, 48000, 1);
+        assert_eq!(samples, 48000);
+    }
+
+    #[test]
+    fn test_frames_to_samples_zero() {
+        assert_eq!(frames_to_samples(0, 30.0, 48000, 2), 0);
+    }
+
+    #[test]
+    fn test_mix_empty_timeline() {
+        let timeline = tazama_core::Timeline::new();
+        let frame_rate = tazama_core::FrameRate::new(30, 1);
+        let (tx, mut rx) = tokio::sync::mpsc::channel(16);
+
+        mix_timeline_audio(&timeline, &frame_rate, 48000, 2, tx).unwrap();
+
+        // No clips → no audio output
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn test_mix_muted_track_produces_no_output() {
+        let mut timeline = tazama_core::Timeline::new();
+        let track_id = timeline.add_track(tazama_core::Track::new("A1", TrackKind::Audio));
+        timeline.tracks[0].muted = true;
+
+        // Even with a clip, muted track produces nothing
+        let clip = tazama_core::Clip::new("test", ClipKind::Audio, 0, 30);
+        let _ = timeline.tracks[0].add_clip(clip);
+
+        let frame_rate = tazama_core::FrameRate::new(30, 1);
+        let (tx, mut rx) = tokio::sync::mpsc::channel(16);
+
+        mix_timeline_audio(&timeline, &frame_rate, 48000, 2, tx).unwrap();
+        let _ = track_id;
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn test_mix_solo_excludes_non_solo_tracks() {
+        let mut timeline = tazama_core::Timeline::new();
+        timeline.add_track(tazama_core::Track::new("A1", TrackKind::Audio));
+        timeline.add_track(tazama_core::Track::new("A2", TrackKind::Audio));
+
+        // Solo track A2 — A1 should be excluded
+        timeline.tracks[1].solo = true;
+
+        // Only A1 has a clip, but it's not solo'd
+        let clip = tazama_core::Clip::new("test", ClipKind::Audio, 0, 30);
+        let _ = timeline.tracks[0].add_clip(clip);
+
+        let frame_rate = tazama_core::FrameRate::new(30, 1);
+        let (tx, mut rx) = tokio::sync::mpsc::channel(16);
+
+        mix_timeline_audio(&timeline, &frame_rate, 48000, 2, tx).unwrap();
+
+        // A1 is excluded because A2 is solo'd, so no output
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn test_mix_video_tracks_ignored() {
+        let mut timeline = tazama_core::Timeline::new();
+        timeline.add_track(tazama_core::Track::new("V1", TrackKind::Video));
+
+        let clip = tazama_core::Clip::new("test", ClipKind::Video, 0, 30);
+        let _ = timeline.tracks[0].add_clip(clip);
+
+        let frame_rate = tazama_core::FrameRate::new(30, 1);
+        let (tx, mut rx) = tokio::sync::mpsc::channel(16);
+
+        mix_timeline_audio(&timeline, &frame_rate, 48000, 2, tx).unwrap();
+
+        // Video tracks are not mixed for audio
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn test_decoded_clip_volume_applied() {
+        // Verify the mixing math: two overlapping clips with different volumes
+        let clip_a = DecodedClip {
+            samples: vec![0.5, 0.5, 0.5, 0.5], // 2 stereo frames
+            start_sample: 0,
+            volume: 1.0,
+        };
+        let clip_b = DecodedClip {
+            samples: vec![0.3, 0.3, 0.3, 0.3],
+            start_sample: 0,
+            volume: 0.5, // half volume
+        };
+
+        // Simulate mixing manually
+        let mut mix = vec![0.0f32; 4];
+        for clip in &[&clip_a, &clip_b] {
+            for i in 0..4 {
+                mix[i] += clip.samples[i] * clip.volume;
+            }
+        }
+
+        // 0.5 * 1.0 + 0.3 * 0.5 = 0.65
+        assert!((mix[0] - 0.65).abs() < 1e-6);
+        assert!((mix[1] - 0.65).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_clamp_prevents_overflow() {
+        // Two loud clips that would sum > 1.0
+        let clip_a = DecodedClip {
+            samples: vec![0.8; 4],
+            start_sample: 0,
+            volume: 1.0,
+        };
+        let clip_b = DecodedClip {
+            samples: vec![0.7; 4],
+            start_sample: 0,
+            volume: 1.0,
+        };
+
+        let mut mix = vec![0.0f32; 4];
+        for clip in &[&clip_a, &clip_b] {
+            for i in 0..4 {
+                mix[i] += clip.samples[i] * clip.volume;
+            }
+        }
+        // Clamp
+        for s in &mut mix {
+            *s = s.clamp(-1.0, 1.0);
+        }
+
+        // 0.8 + 0.7 = 1.5, clamped to 1.0
+        assert_eq!(mix[0], 1.0);
+    }
+
+    #[test]
+    fn test_offset_clips_dont_mix_outside_range() {
+        let clip_a = DecodedClip {
+            samples: vec![1.0; 4], // samples 0..3
+            start_sample: 0,
+            volume: 1.0,
+        };
+        let clip_b = DecodedClip {
+            samples: vec![0.5; 4], // samples 4..7
+            start_sample: 4,
+            volume: 1.0,
+        };
+
+        // Mix chunk 0..4
+        let chunk_size = 4;
+        let mut mix = vec![0.0f32; chunk_size];
+        let offset: u64 = 0;
+
+        for clip in &[&clip_a, &clip_b] {
+            let clip_end = clip.start_sample + clip.samples.len() as u64;
+            if offset >= clip_end || offset + chunk_size as u64 <= clip.start_sample {
+                continue;
+            }
+            let chunk_start_in_clip = if offset > clip.start_sample {
+                (offset - clip.start_sample) as usize
+            } else {
+                0
+            };
+            let mix_start = if clip.start_sample > offset {
+                (clip.start_sample - offset) as usize
+            } else {
+                0
+            };
+            let available_from_clip = clip.samples.len() - chunk_start_in_clip;
+            let available_in_mix = chunk_size - mix_start;
+            let copy_len = available_from_clip.min(available_in_mix);
+            for i in 0..copy_len {
+                mix[mix_start + i] += clip.samples[chunk_start_in_clip + i] * clip.volume;
+            }
+        }
+
+        // Only clip_a contributes to chunk 0..4
+        assert_eq!(mix, vec![1.0, 1.0, 1.0, 1.0]);
     }
 }

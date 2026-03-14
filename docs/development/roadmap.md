@@ -43,28 +43,8 @@ Tauri v2 + React 19 / TypeScript / Vite / Tailwind v4 / Zustand frontend.
 
 ## Engineering Backlog
 
-Known issues and hardening work identified during code audit. Prioritized by severity.
-
-### High Priority
-- [x] GStreamer pipeline cleanup on early exit — RAII `PipelineGuard` added to video.rs and audio.rs
-- [x] GStreamer `static_pad("sink").unwrap()` — replaced with `let Some(pad) = ... else { return }` in both decoders
-- [x] Integer overflow in frame timestamp calculation — uses `checked_mul` chain with `unwrap_or(u64::MAX)` fallback
-- [x] Multi-track audio mixing for export — `mix.rs` decodes all audio clips, applies per-clip volume, sums overlapping regions in time-aligned chunks (following Shruti's pattern)
-- [ ] PreviewCanvas component — placeholder exists but no actual frame rendering from GPU to canvas. Needs Tauri event bridge or shared memory.
-- [x] NewProjectDialog input validation — min bounds (100x100), Create button disabled when invalid
-- [x] MediaItem double-click silent failure — shows toast when no video track exists
-
-### Medium Priority
-- [x] Mutex poisoning resilience — standardized on `unwrap_or_else(|e| e.into_inner())` in playback.rs, frame_source.rs, buffer.rs
-- [x] Audio buffer alignment — truncates to 4-byte aligned length before `chunks_exact(4)` in audio decoder
-- [x] ExportProgress listener cleanup — uses proper `unlistenFn` variable pattern instead of promise chain
-- [x] Missing loading states — FileActions shows "Loading..." and disables buttons during open/save
-- [x] `tazama_add_marker` missing from AGNOS manifest intents — added "add marker" intent with 4 examples
-- [x] Unused `tempfile` dev-dependency in storage crate — removed from Cargo.toml
-- [x] Export pipeline `total_frames` tracking — added `run_with_total()` method, app passes real total_frames
-
-### Low Priority
-- [ ] Per-file error feedback in batch import — currently shows toast per failure but doesn't indicate which files succeeded in batch.
+- [ ] Per-file error feedback in batch import — currently shows toast per failure but doesn't indicate which files succeeded in batch
+- [ ] GPU-accelerated preview — current preview decodes source frames only; wire GPU Renderer into the preview loop to show effects in real-time
 
 ---
 

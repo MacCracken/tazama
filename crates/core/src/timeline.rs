@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::clip::{Clip, ClipId};
+use crate::clip::{Clip, ClipId, ClipKind};
 use crate::marker::{Marker, MarkerId};
 
 #[derive(Debug, Error)]
@@ -267,6 +267,36 @@ impl Timeline {
         None
     }
 
+    /// Find the topmost visible video clip at a given frame position.
+    ///
+    /// Iterates tracks in reverse (higher tracks take priority) and returns
+    /// the first active video/image clip. Respects mute, visible, and solo flags.
+    pub fn topmost_video_clip_at(&self, frame: u64) -> Option<&Clip> {
+        let any_video_solo = self
+            .tracks
+            .iter()
+            .any(|t| t.solo && t.kind == TrackKind::Video);
+
+        for track in self.tracks.iter().rev() {
+            if track.muted || track.kind != TrackKind::Video || !track.visible {
+                continue;
+            }
+            if any_video_solo && !track.solo {
+                continue;
+            }
+            for clip in &track.clips {
+                let clip_end = clip.timeline_start + clip.duration;
+                if frame >= clip.timeline_start
+                    && frame < clip_end
+                    && matches!(clip.kind, ClipKind::Video | ClipKind::Image)
+                {
+                    return Some(clip);
+                }
+            }
+        }
+        None
+    }
+
     /// Add a marker to the timeline.
     pub fn add_marker(&mut self, marker: Marker) {
         self.markers.push(marker);
@@ -450,5 +480,90 @@ mod tests {
         let (found_track, found_clip) = timeline.find_clip(clip_id).unwrap();
         assert_eq!(found_track, track_id);
         assert_eq!(found_clip.id, clip_id);
+    }
+
+    #[test]
+    fn topmost_video_clip_at_returns_clip() {
+        let mut timeline = Timeline::new();
+        timeline.add_track(Track::new("V1", TrackKind::Video));
+        let clip = make_clip(10, 50);
+        let clip_id = clip.id;
+        timeline.tracks[0].add_clip(clip).unwrap();
+
+        assert_eq!(timeline.topmost_video_clip_at(10).unwrap().id, clip_id);
+        assert_eq!(timeline.topmost_video_clip_at(59).unwrap().id, clip_id);
+        assert!(timeline.topmost_video_clip_at(9).is_none());
+        assert!(timeline.topmost_video_clip_at(60).is_none());
+    }
+
+    #[test]
+    fn topmost_video_clip_at_prefers_higher_track() {
+        let mut timeline = Timeline::new();
+        timeline.add_track(Track::new("V1", TrackKind::Video));
+        timeline.add_track(Track::new("V2", TrackKind::Video));
+        let clip1 = make_clip(0, 30);
+        let clip2 = make_clip(0, 30);
+        let clip2_id = clip2.id;
+        timeline.tracks[0].add_clip(clip1).unwrap();
+        timeline.tracks[1].add_clip(clip2).unwrap();
+
+        // Higher track (V2, index 1) takes priority
+        let found = timeline.topmost_video_clip_at(0).unwrap();
+        assert_eq!(found.id, clip2_id);
+    }
+
+    #[test]
+    fn topmost_video_clip_at_skips_muted() {
+        let mut timeline = Timeline::new();
+        timeline.add_track(Track::new("V1", TrackKind::Video));
+        timeline.add_track(Track::new("V2", TrackKind::Video));
+        let clip1 = make_clip(0, 30);
+        let clip1_id = clip1.id;
+        let clip2 = make_clip(0, 30);
+        timeline.tracks[0].add_clip(clip1).unwrap();
+        timeline.tracks[1].add_clip(clip2).unwrap();
+        timeline.tracks[1].muted = true;
+
+        // V2 is muted, so V1 is returned
+        let found = timeline.topmost_video_clip_at(0).unwrap();
+        assert_eq!(found.id, clip1_id);
+    }
+
+    #[test]
+    fn topmost_video_clip_at_respects_solo() {
+        let mut timeline = Timeline::new();
+        timeline.add_track(Track::new("V1", TrackKind::Video));
+        timeline.add_track(Track::new("V2", TrackKind::Video));
+        let clip1 = make_clip(0, 30);
+        let clip1_id = clip1.id;
+        let clip2 = make_clip(0, 30);
+        timeline.tracks[0].add_clip(clip1).unwrap();
+        timeline.tracks[1].add_clip(clip2).unwrap();
+        timeline.tracks[0].solo = true;
+
+        // V1 is solo'd, so V2 is excluded
+        let found = timeline.topmost_video_clip_at(0).unwrap();
+        assert_eq!(found.id, clip1_id);
+    }
+
+    #[test]
+    fn topmost_video_clip_at_ignores_audio_tracks() {
+        let mut timeline = Timeline::new();
+        timeline.add_track(Track::new("A1", TrackKind::Audio));
+        let clip = Clip::new("audio", ClipKind::Audio, 0, 30);
+        timeline.tracks[0].add_clip(clip).unwrap();
+
+        assert!(timeline.topmost_video_clip_at(0).is_none());
+    }
+
+    #[test]
+    fn topmost_video_clip_at_skips_invisible() {
+        let mut timeline = Timeline::new();
+        timeline.add_track(Track::new("V1", TrackKind::Video));
+        let clip = make_clip(0, 30);
+        timeline.tracks[0].add_clip(clip).unwrap();
+        timeline.tracks[0].visible = false;
+
+        assert!(timeline.topmost_video_clip_at(0).is_none());
     }
 }

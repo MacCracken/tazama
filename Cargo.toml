@@ -63,3 +63,6 @@ bytemuck = { version = "1", features = ["derive"] }
 
 # Audio
 cpal = "0.15"
+
+# Encoding
+base64 = "0.22"

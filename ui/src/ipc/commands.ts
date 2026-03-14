@@ -40,3 +40,19 @@ export async function exportProject(
 ): Promise<void> {
   return invoke<void>("export_project", { project, config });
 }
+
+export interface PreviewFrame {
+  data: string; // base64-encoded RGBA
+  width: number;
+  height: number;
+}
+
+export async function renderPreviewFrame(
+  project: Project,
+  frameIndex: number,
+): Promise<PreviewFrame> {
+  return invoke<PreviewFrame>("render_preview_frame", {
+    project,
+    frameIndex,
+  });
+}

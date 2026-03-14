@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use base64::Engine;
+use serde::Serialize;
 use tazama_core::{MediaInfo, Project, ProjectSettings};
 use tazama_media::ExportConfig;
 
@@ -173,4 +175,89 @@ pub async fn export_project(
     );
 
     Ok(())
+}
+
+/// Response for a rendered preview frame.
+#[derive(Serialize)]
+pub struct PreviewFrame {
+    /// Base64-encoded RGBA pixel data.
+    pub data: String,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Render a single preview frame at the given timeline position.
+///
+/// Finds the topmost visible video clip active at `frame_index`, decodes its
+/// source frame, and returns the RGBA data as base64. If no clip is active,
+/// returns a transparent black frame.
+#[tauri::command]
+pub async fn render_preview_frame(
+    project: Project,
+    frame_index: u64,
+) -> Result<PreviewFrame, String> {
+    tazama_media::init().map_err(|e| e.to_string())?;
+
+    let width = project.settings.width;
+    let height = project.settings.height;
+    let frame_rate = (
+        project.settings.frame_rate.numerator,
+        project.settings.frame_rate.denominator,
+    );
+
+    let clip = match project.timeline.topmost_video_clip_at(frame_index) {
+        Some(c) => c,
+        None => {
+            // Return black frame
+            let black = vec![0u8; (width * height * 4) as usize];
+            return Ok(PreviewFrame {
+                data: base64::engine::general_purpose::STANDARD.encode(&black),
+                width,
+                height,
+            });
+        }
+    };
+
+    let media_path = match &clip.media {
+        Some(m) => m.path.clone(),
+        None => {
+            let black = vec![0u8; (width * height * 4) as usize];
+            return Ok(PreviewFrame {
+                data: base64::engine::general_purpose::STANDARD.encode(&black),
+                width,
+                height,
+            });
+        }
+    };
+
+    // Calculate source frame index (apply speed if present)
+    let speed_factor = clip
+        .effects
+        .iter()
+        .find_map(|e| {
+            if let tazama_core::EffectKind::Speed { factor } = &e.kind {
+                Some(*factor)
+            } else {
+                None
+            }
+        })
+        .unwrap_or(1.0);
+
+    let local_frame = frame_index - clip.timeline_start;
+    let source_frame = clip.source_offset + (local_frame as f32 * speed_factor) as u64;
+
+    // Decode the source frame
+    let video_frame = tazama_media::decode::video::VideoDecoder::decode_frame(
+        std::path::Path::new(&media_path),
+        source_frame,
+        frame_rate,
+    )
+    .await
+    .map_err(|e| format!("decode frame: {e}"))?;
+
+    Ok(PreviewFrame {
+        data: base64::engine::general_purpose::STANDARD.encode(&video_frame.data),
+        width: video_frame.width,
+        height: video_frame.height,
+    })
 }

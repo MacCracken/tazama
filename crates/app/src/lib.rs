@@ -23,6 +23,7 @@ pub fn run() {
             commands::import_media,
             commands::probe_media,
             commands::export_project,
+            commands::render_preview_frame,
         ])
         .run(tauri::generate_context!())
         .expect("error running tazama");
