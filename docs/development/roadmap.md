@@ -19,7 +19,7 @@ Wire up remaining MCP features, add agnoshi intents, package for marketplace.
 - [x] Markers as first-class timeline type with undo/redo support
 - [x] Track solo/visible fields with GPU renderer and audio preview integration
 - [x] `tazama_add_marker` MCP tool (6 tools total)
-- [x] 5 agnoshi intents ("edit video", "add clip", "apply effect", "export project", "show timeline")
+- [x] 6 agnoshi intents ("edit video", "add clip", "apply effect", "export project", "add marker", "show timeline")
 - [x] `.agnos-agent/manifest.toml` bundle for marketplace
 - [x] Marketplace recipe (`recipes/marketplace/tazama.toml`)
 - [x] MCP integration test suite (7 tests, spawns binary, tests JSON-RPC protocol)
