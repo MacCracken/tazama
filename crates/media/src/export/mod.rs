@@ -36,3 +36,50 @@ impl ExportProgress {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fraction_zero_total() {
+        let p = ExportProgress {
+            frames_written: 0,
+            total_frames: 0,
+            done: false,
+        };
+        assert_eq!(p.fraction(), 0.0);
+    }
+
+    #[test]
+    fn fraction_half() {
+        let p = ExportProgress {
+            frames_written: 50,
+            total_frames: 100,
+            done: false,
+        };
+        assert!((p.fraction() - 0.5).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn fraction_complete() {
+        let p = ExportProgress {
+            frames_written: 100,
+            total_frames: 100,
+            done: true,
+        };
+        assert!((p.fraction() - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn export_format_serde() {
+        let json = serde_json::to_string(&ExportFormat::Mp4).unwrap();
+        assert_eq!(json, "\"Mp4\"");
+        let back: ExportFormat = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, ExportFormat::Mp4);
+
+        let json = serde_json::to_string(&ExportFormat::WebM).unwrap();
+        let back: ExportFormat = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, ExportFormat::WebM);
+    }
+}

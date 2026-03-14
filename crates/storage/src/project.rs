@@ -29,3 +29,32 @@ impl ProjectStore {
         Ok(project)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tazama_core::ProjectSettings;
+
+    #[tokio::test]
+    async fn save_and_load_round_trip() {
+        let dir = std::env::temp_dir().join("tazama-test-project");
+        let _ = tokio::fs::create_dir_all(&dir).await;
+        let path = dir.join("test.tazama");
+
+        let project = Project::new("test project", ProjectSettings::default());
+        let id = project.id;
+        ProjectStore::save(&project, &path).await.unwrap();
+
+        let loaded = ProjectStore::load(&path).await.unwrap();
+        assert_eq!(loaded.id, id);
+        assert_eq!(loaded.name, "test project");
+
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    #[tokio::test]
+    async fn load_nonexistent_returns_error() {
+        let result = ProjectStore::load(Path::new("/nonexistent/project.tazama")).await;
+        assert!(result.is_err());
+    }
+}

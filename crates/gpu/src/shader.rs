@@ -40,3 +40,43 @@ impl ShaderModule {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn embedded_shaders_are_4byte_aligned() {
+        assert!(COLOR_GRADE_SPV.len().is_multiple_of(4));
+        assert!(COMPOSITE_SPV.len().is_multiple_of(4));
+        assert!(CROP_SPV.len().is_multiple_of(4));
+        assert!(DISSOLVE_SPV.len().is_multiple_of(4));
+        assert!(WIPE_SPV.len().is_multiple_of(4));
+        assert!(FADE_SPV.len().is_multiple_of(4));
+    }
+
+    #[test]
+    fn embedded_shaders_are_not_empty() {
+        assert!(!COLOR_GRADE_SPV.is_empty());
+        assert!(!COMPOSITE_SPV.is_empty());
+        assert!(!CROP_SPV.is_empty());
+        assert!(!DISSOLVE_SPV.is_empty());
+        assert!(!WIPE_SPV.is_empty());
+        assert!(!FADE_SPV.is_empty());
+    }
+
+    #[test]
+    fn embedded_shaders_have_spirv_magic() {
+        // SPIR-V magic number is 0x07230203
+        fn check_magic(spv: &[u8]) {
+            let magic = u32::from_le_bytes([spv[0], spv[1], spv[2], spv[3]]);
+            assert_eq!(magic, 0x07230203, "invalid SPIR-V magic number");
+        }
+        check_magic(COLOR_GRADE_SPV);
+        check_magic(COMPOSITE_SPV);
+        check_magic(CROP_SPV);
+        check_magic(DISSOLVE_SPV);
+        check_magic(WIPE_SPV);
+        check_magic(FADE_SPV);
+    }
+}

@@ -4990,6 +4990,7 @@ dependencies = [
  "gstreamer-pbutils",
  "gstreamer-video",
  "serde",
+ "serde_json",
  "tazama-core",
  "thiserror 2.0.18",
  "tokio",

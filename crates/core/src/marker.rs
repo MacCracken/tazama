@@ -45,3 +45,52 @@ impl Marker {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn marker_new() {
+        let m = Marker::new("chapter", 100, MarkerColor::Green);
+        assert_eq!(m.name, "chapter");
+        assert_eq!(m.frame, 100);
+        assert_eq!(m.color, MarkerColor::Green);
+    }
+
+    #[test]
+    fn marker_id_default() {
+        let id1 = MarkerId::default();
+        let id2 = MarkerId::default();
+        assert_ne!(id1, id2);
+    }
+
+    #[test]
+    fn marker_serde_round_trip() {
+        let m = Marker::new("test", 42, MarkerColor::Purple);
+        let json = serde_json::to_string(&m).unwrap();
+        let back: Marker = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.id, m.id);
+        assert_eq!(back.name, "test");
+        assert_eq!(back.frame, 42);
+        assert_eq!(back.color, MarkerColor::Purple);
+    }
+
+    #[test]
+    fn all_marker_colors() {
+        for color in [
+            MarkerColor::Red,
+            MarkerColor::Orange,
+            MarkerColor::Yellow,
+            MarkerColor::Green,
+            MarkerColor::Blue,
+            MarkerColor::Purple,
+            MarkerColor::White,
+        ] {
+            let m = Marker::new("test", 0, color);
+            let json = serde_json::to_string(&m).unwrap();
+            let back: Marker = serde_json::from_str(&json).unwrap();
+            assert_eq!(back.color, color);
+        }
+    }
+}

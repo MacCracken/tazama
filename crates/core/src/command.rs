@@ -510,6 +510,194 @@ mod tests {
     }
 
     #[test]
+    fn remove_clip_undo_re_adds() {
+        let (mut timeline, mut history) = setup();
+        let track_id = timeline.tracks[0].id;
+        let clip = Clip::new("clip1", ClipKind::Video, 0, 30);
+        let clip_id = clip.id;
+        history
+            .execute(
+                EditCommand::AddClip {
+                    track_id,
+                    clip: clip.clone(),
+                },
+                &mut timeline,
+            )
+            .unwrap();
+
+        let cmd = EditCommand::RemoveClip {
+            track_id,
+            clip: clip.clone(),
+        };
+        history.execute(cmd, &mut timeline).unwrap();
+        assert_eq!(timeline.tracks[0].clips.len(), 0);
+
+        history.undo(&mut timeline).unwrap();
+        assert_eq!(timeline.tracks[0].clips.len(), 1);
+        assert_eq!(timeline.tracks[0].clips[0].id, clip_id);
+    }
+
+    #[test]
+    fn trim_clip_undo() {
+        let (mut timeline, mut history) = setup();
+        let track_id = timeline.tracks[0].id;
+        let clip = Clip::new("clip1", ClipKind::Video, 0, 60);
+        let clip_id = clip.id;
+        history
+            .execute(EditCommand::AddClip { track_id, clip }, &mut timeline)
+            .unwrap();
+
+        let cmd = EditCommand::TrimClip {
+            track_id,
+            clip_id,
+            old_offset: 0,
+            old_duration: 60,
+            new_offset: 10,
+            new_duration: 40,
+        };
+        history.execute(cmd, &mut timeline).unwrap();
+        assert_eq!(timeline.tracks[0].clips[0].source_offset, 10);
+        assert_eq!(timeline.tracks[0].clips[0].duration, 40);
+
+        history.undo(&mut timeline).unwrap();
+        assert_eq!(timeline.tracks[0].clips[0].source_offset, 0);
+        assert_eq!(timeline.tracks[0].clips[0].duration, 60);
+    }
+
+    #[test]
+    fn apply_effect_undo() {
+        let (mut timeline, mut history) = setup();
+        let track_id = timeline.tracks[0].id;
+        let clip = Clip::new("clip1", ClipKind::Video, 0, 30);
+        let clip_id = clip.id;
+        history
+            .execute(EditCommand::AddClip { track_id, clip }, &mut timeline)
+            .unwrap();
+
+        let effect = crate::effect::Effect::new(crate::effect::EffectKind::Speed { factor: 2.0 });
+        let effect_id = effect.id;
+        let cmd = EditCommand::ApplyEffect {
+            track_id,
+            clip_id,
+            effect,
+        };
+        history.execute(cmd, &mut timeline).unwrap();
+        assert_eq!(timeline.tracks[0].clips[0].effects.len(), 1);
+
+        history.undo(&mut timeline).unwrap();
+        assert_eq!(timeline.tracks[0].clips[0].effects.len(), 0);
+
+        history.redo(&mut timeline).unwrap();
+        assert_eq!(timeline.tracks[0].clips[0].effects.len(), 1);
+        assert_eq!(timeline.tracks[0].clips[0].effects[0].id, effect_id);
+    }
+
+    #[test]
+    fn remove_effect_undo() {
+        let (mut timeline, mut history) = setup();
+        let track_id = timeline.tracks[0].id;
+        let clip = Clip::new("clip1", ClipKind::Video, 0, 30);
+        let clip_id = clip.id;
+        history
+            .execute(
+                EditCommand::AddClip {
+                    track_id,
+                    clip: clip.clone(),
+                },
+                &mut timeline,
+            )
+            .unwrap();
+
+        let effect =
+            crate::effect::Effect::new(crate::effect::EffectKind::Volume { gain_db: -6.0 });
+        // Apply effect first
+        history
+            .execute(
+                EditCommand::ApplyEffect {
+                    track_id,
+                    clip_id,
+                    effect: effect.clone(),
+                },
+                &mut timeline,
+            )
+            .unwrap();
+
+        // Remove effect
+        history
+            .execute(
+                EditCommand::RemoveEffect {
+                    track_id,
+                    clip_id,
+                    effect: effect.clone(),
+                },
+                &mut timeline,
+            )
+            .unwrap();
+        assert_eq!(timeline.tracks[0].clips[0].effects.len(), 0);
+
+        // Undo remove — effect is back
+        history.undo(&mut timeline).unwrap();
+        assert_eq!(timeline.tracks[0].clips[0].effects.len(), 1);
+    }
+
+    #[test]
+    fn remove_track_undo_restores_at_index() {
+        let (mut timeline, mut history) = setup();
+        // Add a second track
+        let track_id2 = crate::timeline::TrackId::new();
+        history
+            .execute(
+                EditCommand::AddTrack {
+                    track_id: track_id2,
+                    name: "A1".to_string(),
+                    kind: TrackKind::Audio,
+                },
+                &mut timeline,
+            )
+            .unwrap();
+        assert_eq!(timeline.tracks.len(), 2);
+
+        // Remove it
+        let cmd = EditCommand::RemoveTrack {
+            track_id: track_id2,
+            index: 1,
+            name: "A1".to_string(),
+            kind: TrackKind::Audio,
+            clips: vec![],
+        };
+        history.execute(cmd, &mut timeline).unwrap();
+        assert_eq!(timeline.tracks.len(), 1);
+
+        // Undo — track is back at index 1
+        history.undo(&mut timeline).unwrap();
+        assert_eq!(timeline.tracks.len(), 2);
+        assert_eq!(timeline.tracks[1].name, "A1");
+    }
+
+    #[test]
+    fn remove_marker_undo() {
+        let (mut timeline, mut history) = setup();
+        let marker = crate::marker::Marker::new("m1", 10, crate::marker::MarkerColor::Yellow);
+        let marker_id = marker.id;
+        history
+            .execute(
+                EditCommand::AddMarker {
+                    marker: marker.clone(),
+                },
+                &mut timeline,
+            )
+            .unwrap();
+
+        let cmd = EditCommand::RemoveMarker { marker };
+        history.execute(cmd, &mut timeline).unwrap();
+        assert_eq!(timeline.markers.len(), 0);
+
+        history.undo(&mut timeline).unwrap();
+        assert_eq!(timeline.markers.len(), 1);
+        assert_eq!(timeline.markers[0].id, marker_id);
+    }
+
+    #[test]
     fn redo_stack_cleared_on_new_action() {
         let (mut timeline, mut history) = setup();
         let track_id = timeline.tracks[0].id;

@@ -75,3 +75,63 @@ impl Effect {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn effect_new_is_enabled() {
+        let e = Effect::new(EffectKind::Speed { factor: 2.0 });
+        assert!(e.enabled);
+    }
+
+    #[test]
+    fn effect_id_default() {
+        let id1 = EffectId::default();
+        let id2 = EffectId::default();
+        assert_ne!(id1, id2);
+    }
+
+    #[test]
+    fn effect_kinds_construct() {
+        let _ = EffectKind::ColorGrade {
+            brightness: 0.1,
+            contrast: 1.0,
+            saturation: 1.0,
+            temperature: 0.0,
+        };
+        let _ = EffectKind::Crop {
+            left: 0.1,
+            top: 0.1,
+            right: 0.1,
+            bottom: 0.1,
+        };
+        let _ = EffectKind::Speed { factor: 2.0 };
+        let _ = EffectKind::Transition {
+            kind: TransitionKind::Dissolve,
+            duration_frames: 30,
+        };
+        let _ = EffectKind::FadeIn {
+            duration_frames: 15,
+        };
+        let _ = EffectKind::FadeOut {
+            duration_frames: 15,
+        };
+        let _ = EffectKind::Volume { gain_db: -3.0 };
+    }
+
+    #[test]
+    fn effect_serde_round_trip() {
+        let effect = Effect::new(EffectKind::ColorGrade {
+            brightness: 0.5,
+            contrast: 1.2,
+            saturation: 0.8,
+            temperature: -0.1,
+        });
+        let json = serde_json::to_string(&effect).unwrap();
+        let back: Effect = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.id, effect.id);
+        assert!(back.enabled);
+    }
+}

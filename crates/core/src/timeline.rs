@@ -689,4 +689,131 @@ mod tests {
         assert_eq!(audible.len(), 1);
         assert_eq!(audible[0].name, "A2");
     }
+
+    // --- visible_video_tracks tests ---
+
+    #[test]
+    fn visible_video_tracks_excludes_audio() {
+        let mut timeline = Timeline::new();
+        timeline.add_track(Track::new("V1", TrackKind::Video));
+        timeline.add_track(Track::new("A1", TrackKind::Audio));
+        let visible = timeline.visible_video_tracks();
+        assert_eq!(visible.len(), 1);
+        assert_eq!(visible[0].name, "V1");
+    }
+
+    #[test]
+    fn visible_video_tracks_excludes_invisible() {
+        let mut timeline = Timeline::new();
+        timeline.add_track(Track::new("V1", TrackKind::Video));
+        timeline.add_track(Track::new("V2", TrackKind::Video));
+        timeline.tracks[0].visible = false;
+        let visible = timeline.visible_video_tracks();
+        assert_eq!(visible.len(), 1);
+        assert_eq!(visible[0].name, "V2");
+    }
+
+    #[test]
+    fn visible_video_tracks_solo() {
+        let mut timeline = Timeline::new();
+        timeline.add_track(Track::new("V1", TrackKind::Video));
+        timeline.add_track(Track::new("V2", TrackKind::Video));
+        timeline.tracks[0].solo = true;
+        let visible = timeline.visible_video_tracks();
+        assert_eq!(visible.len(), 1);
+        assert_eq!(visible[0].name, "V1");
+    }
+
+    // --- Track operations ---
+
+    #[test]
+    fn remove_track_by_id() {
+        let mut timeline = Timeline::new();
+        let id = timeline.add_track(Track::new("V1", TrackKind::Video));
+        assert_eq!(timeline.tracks.len(), 1);
+        let removed = timeline.remove_track(id).unwrap();
+        assert_eq!(removed.name, "V1");
+        assert_eq!(timeline.tracks.len(), 0);
+    }
+
+    #[test]
+    fn remove_nonexistent_track_errors() {
+        let mut timeline = Timeline::new();
+        let result = timeline.remove_track(TrackId::new());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn duplicate_clip_on_track() {
+        let mut track = Track::new("V1", TrackKind::Video);
+        let clip = make_clip(0, 30);
+        let clip_id = clip.id;
+        track.add_clip(clip).unwrap();
+        let dup_id = track.duplicate_clip(clip_id).unwrap();
+        assert_eq!(track.clips.len(), 2);
+        // Duplicate should start at end of original
+        let dup = track.clips.iter().find(|c| c.id == dup_id).unwrap();
+        assert_eq!(dup.timeline_start, 30);
+        assert_eq!(dup.duration, 30);
+    }
+
+    #[test]
+    fn duplicate_clip_locked_track_rejected() {
+        let mut track = Track::new("V1", TrackKind::Video);
+        let clip = make_clip(0, 30);
+        let clip_id = clip.id;
+        track.add_clip(clip).unwrap();
+        track.locked = true;
+        let result = track.duplicate_clip(clip_id);
+        assert!(matches!(result, Err(TimelineError::TrackLocked)));
+    }
+
+    #[test]
+    fn trim_clip_on_track() {
+        let mut track = Track::new("V1", TrackKind::Video);
+        let clip = make_clip(0, 60);
+        let clip_id = clip.id;
+        track.add_clip(clip).unwrap();
+        track.trim_clip(clip_id, 10, 40).unwrap();
+        assert_eq!(track.clips[0].source_offset, 10);
+        assert_eq!(track.clips[0].duration, 40);
+    }
+
+    #[test]
+    fn split_clip_locked_track() {
+        let mut track = Track::new("V1", TrackKind::Video);
+        let clip = make_clip(0, 60);
+        let clip_id = clip.id;
+        track.add_clip(clip).unwrap();
+        track.locked = true;
+        let result = track.split_clip(clip_id, 30);
+        assert!(matches!(result, Err(TimelineError::TrackLocked)));
+    }
+
+    #[test]
+    fn trim_clip_locked_track() {
+        let mut track = Track::new("V1", TrackKind::Video);
+        let clip = make_clip(0, 60);
+        let clip_id = clip.id;
+        track.add_clip(clip).unwrap();
+        track.locked = true;
+        let result = track.trim_clip(clip_id, 10, 40);
+        assert!(matches!(result, Err(TimelineError::TrackLocked)));
+    }
+
+    #[test]
+    fn timeline_default_is_empty() {
+        let t = Timeline::default();
+        assert!(t.tracks.is_empty());
+        assert!(t.markers.is_empty());
+    }
+
+    #[test]
+    fn track_find_and_find_mut() {
+        let mut timeline = Timeline::new();
+        let id = timeline.add_track(Track::new("V1", TrackKind::Video));
+        assert!(timeline.track(id).is_some());
+        assert!(timeline.track_mut(id).is_some());
+        assert!(timeline.track(TrackId::new()).is_none());
+    }
 }

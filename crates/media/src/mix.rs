@@ -406,4 +406,87 @@ mod tests {
         // Only clip_a contributes to chunk 0..4
         assert_eq!(mix, vec![1.0, 1.0, 1.0, 1.0]);
     }
+
+    #[test]
+    fn test_mix_zero_sample_rate_returns_ok() {
+        let timeline = tazama_core::Timeline::new();
+        let frame_rate = tazama_core::FrameRate::new(30, 1);
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+        // sample_rate=0 should not panic
+        mix_timeline_audio(&timeline, &frame_rate, 0, 2, tx).unwrap();
+    }
+
+    #[test]
+    fn test_mix_zero_channels_returns_ok() {
+        let timeline = tazama_core::Timeline::new();
+        let frame_rate = tazama_core::FrameRate::new(30, 1);
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+        mix_timeline_audio(&timeline, &frame_rate, 48000, 0, tx).unwrap();
+    }
+
+    #[test]
+    fn test_mix_clip_no_media_skipped() {
+        let mut timeline = tazama_core::Timeline::new();
+        timeline.add_track(tazama_core::Track::new("A1", TrackKind::Audio));
+        // Clip with no media reference
+        let clip = tazama_core::Clip::new("no-media", ClipKind::Audio, 0, 30);
+        timeline.tracks[0].add_clip(clip).unwrap();
+
+        let frame_rate = tazama_core::FrameRate::new(30, 1);
+        let (tx, mut rx) = tokio::sync::mpsc::channel(16);
+        // This will try to decode but skip because no media path
+        // Actually the clip has no media, so it will be skipped in the loop
+        mix_timeline_audio(&timeline, &frame_rate, 48000, 2, tx).unwrap();
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn test_partial_overlap_mixing() {
+        // Clip B starts in the middle of clip A
+        let clip_a = DecodedClip {
+            samples: vec![0.5; 8],
+            start_sample: 0,
+            volume: 1.0,
+        };
+        let clip_b = DecodedClip {
+            samples: vec![0.3; 8],
+            start_sample: 4, // starts at sample 4
+            volume: 1.0,
+        };
+
+        // Mix chunk 0..8
+        let chunk_size = 8;
+        let mut mix = vec![0.0f32; chunk_size];
+        let offset: u64 = 0;
+
+        for clip in &[&clip_a, &clip_b] {
+            let clip_end = clip.start_sample + clip.samples.len() as u64;
+            if offset >= clip_end || offset + chunk_size as u64 <= clip.start_sample {
+                continue;
+            }
+            let chunk_start_in_clip = if offset > clip.start_sample {
+                (offset - clip.start_sample) as usize
+            } else {
+                0
+            };
+            let mix_start = if clip.start_sample > offset {
+                (clip.start_sample - offset) as usize
+            } else {
+                0
+            };
+            let available_from_clip = clip.samples.len() - chunk_start_in_clip;
+            let available_in_mix = chunk_size - mix_start;
+            let copy_len = available_from_clip.min(available_in_mix);
+            for i in 0..copy_len {
+                mix[mix_start + i] += clip.samples[chunk_start_in_clip + i] * clip.volume;
+            }
+        }
+
+        // Samples 0-3: only clip_a (0.5)
+        assert_eq!(mix[0], 0.5);
+        assert_eq!(mix[3], 0.5);
+        // Samples 4-7: clip_a + clip_b (0.5 + 0.3 = 0.8)
+        assert!((mix[4] - 0.8).abs() < 1e-6);
+        assert!((mix[7] - 0.8).abs() < 1e-6);
+    }
 }

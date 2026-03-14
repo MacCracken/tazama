@@ -134,4 +134,20 @@ mod tests {
         let p2 = Project::new("b", ProjectSettings::default());
         assert_ne!(p1.id, p2.id);
     }
+
+    #[test]
+    fn project_id_default() {
+        let id1 = ProjectId::default();
+        let id2 = ProjectId::default();
+        assert_ne!(id1, id2);
+    }
+
+    #[test]
+    fn project_serde_round_trip() {
+        let p = Project::new("serde test", ProjectSettings::default());
+        let json = serde_json::to_string(&p).unwrap();
+        let back: Project = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.id, p.id);
+        assert_eq!(back.name, "serde test");
+    }
 }
