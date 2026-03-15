@@ -469,7 +469,10 @@ fn test_add_marker_all_colors() {
         }
     }));
 
-    for (i, color) in ["orange", "yellow", "green", "blue", "purple", "white"].iter().enumerate() {
+    for (i, color) in ["orange", "yellow", "green", "blue", "purple", "white"]
+        .iter()
+        .enumerate()
+    {
         let response = mcp.send(&json!({
             "jsonrpc": "2.0",
             "id": i + 3,

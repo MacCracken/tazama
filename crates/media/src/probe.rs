@@ -200,41 +200,71 @@ mod tests {
 
     #[test]
     fn detect_container_mp4() {
-        assert_eq!(detect_container(Path::new("video.mp4")), ContainerFormat::Mp4);
-        assert_eq!(detect_container(Path::new("video.m4v")), ContainerFormat::Mp4);
+        assert_eq!(
+            detect_container(Path::new("video.mp4")),
+            ContainerFormat::Mp4
+        );
+        assert_eq!(
+            detect_container(Path::new("video.m4v")),
+            ContainerFormat::Mp4
+        );
     }
 
     #[test]
     fn detect_container_mkv() {
-        assert_eq!(detect_container(Path::new("video.mkv")), ContainerFormat::Mkv);
+        assert_eq!(
+            detect_container(Path::new("video.mkv")),
+            ContainerFormat::Mkv
+        );
     }
 
     #[test]
     fn detect_container_webm() {
-        assert_eq!(detect_container(Path::new("video.webm")), ContainerFormat::WebM);
+        assert_eq!(
+            detect_container(Path::new("video.webm")),
+            ContainerFormat::WebM
+        );
     }
 
     #[test]
     fn detect_container_mov() {
-        assert_eq!(detect_container(Path::new("video.mov")), ContainerFormat::Mov);
+        assert_eq!(
+            detect_container(Path::new("video.mov")),
+            ContainerFormat::Mov
+        );
     }
 
     #[test]
     fn detect_container_avi() {
-        assert_eq!(detect_container(Path::new("video.avi")), ContainerFormat::Avi);
+        assert_eq!(
+            detect_container(Path::new("video.avi")),
+            ContainerFormat::Avi
+        );
     }
 
     #[test]
     fn detect_container_unknown() {
-        assert_eq!(detect_container(Path::new("video.flv")), ContainerFormat::Other);
+        assert_eq!(
+            detect_container(Path::new("video.flv")),
+            ContainerFormat::Other
+        );
         assert_eq!(detect_container(Path::new("noext")), ContainerFormat::Other);
     }
 
     #[test]
     fn detect_container_case_insensitive() {
-        assert_eq!(detect_container(Path::new("video.MP4")), ContainerFormat::Mp4);
-        assert_eq!(detect_container(Path::new("video.MKV")), ContainerFormat::Mkv);
-        assert_eq!(detect_container(Path::new("video.WebM")), ContainerFormat::WebM);
+        assert_eq!(
+            detect_container(Path::new("video.MP4")),
+            ContainerFormat::Mp4
+        );
+        assert_eq!(
+            detect_container(Path::new("video.MKV")),
+            ContainerFormat::Mkv
+        );
+        assert_eq!(
+            detect_container(Path::new("video.WebM")),
+            ContainerFormat::WebM
+        );
     }
 
     #[test]

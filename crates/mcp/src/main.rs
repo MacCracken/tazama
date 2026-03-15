@@ -684,10 +684,16 @@ mod tests {
 
     #[test]
     fn test_parse_effect_color_grade() {
-        let params = json!({ "brightness": 0.5, "contrast": 1.2, "saturation": 0.8, "temperature": -0.1 });
+        let params =
+            json!({ "brightness": 0.5, "contrast": 1.2, "saturation": 0.8, "temperature": -0.1 });
         let kind = parse_effect_kind("color_grade", &params).unwrap();
         match kind {
-            EffectKind::ColorGrade { brightness, contrast, saturation, temperature } => {
+            EffectKind::ColorGrade {
+                brightness,
+                contrast,
+                saturation,
+                temperature,
+            } => {
                 assert!((brightness - 0.5).abs() < f32::EPSILON);
                 assert!((contrast - 1.2).abs() < f32::EPSILON);
                 assert!((saturation - 0.8).abs() < f32::EPSILON);
@@ -702,7 +708,12 @@ mod tests {
         let params = json!({});
         let kind = parse_effect_kind("color_grade", &params).unwrap();
         match kind {
-            EffectKind::ColorGrade { brightness, contrast, saturation, temperature } => {
+            EffectKind::ColorGrade {
+                brightness,
+                contrast,
+                saturation,
+                temperature,
+            } => {
                 assert!((brightness - 0.0).abs() < f32::EPSILON);
                 assert!((contrast - 1.0).abs() < f32::EPSILON);
                 assert!((saturation - 1.0).abs() < f32::EPSILON);
@@ -717,7 +728,12 @@ mod tests {
         let params = json!({ "left": 0.1, "top": 0.2, "right": 0.3, "bottom": 0.4 });
         let kind = parse_effect_kind("crop", &params).unwrap();
         match kind {
-            EffectKind::Crop { left, top, right, bottom } => {
+            EffectKind::Crop {
+                left,
+                top,
+                right,
+                bottom,
+            } => {
                 assert!((left - 0.1).abs() < f32::EPSILON);
                 assert!((top - 0.2).abs() < f32::EPSILON);
                 assert!((right - 0.3).abs() < f32::EPSILON);
@@ -731,7 +747,9 @@ mod tests {
     fn test_parse_effect_speed() {
         let params = json!({ "factor": 2.0 });
         let kind = parse_effect_kind("speed", &params).unwrap();
-        assert!(matches!(kind, EffectKind::Speed { factor } if (factor - 2.0).abs() < f32::EPSILON));
+        assert!(
+            matches!(kind, EffectKind::Speed { factor } if (factor - 2.0).abs() < f32::EPSILON)
+        );
     }
 
     #[test]
@@ -750,28 +768,45 @@ mod tests {
     fn test_parse_effect_fade_in() {
         let params = json!({ "duration_frames": 60 });
         let kind = parse_effect_kind("fade_in", &params).unwrap();
-        assert!(matches!(kind, EffectKind::FadeIn { duration_frames: 60 }));
+        assert!(matches!(
+            kind,
+            EffectKind::FadeIn {
+                duration_frames: 60
+            }
+        ));
     }
 
     #[test]
     fn test_parse_effect_fade_in_default() {
         let params = json!({});
         let kind = parse_effect_kind("fade_in", &params).unwrap();
-        assert!(matches!(kind, EffectKind::FadeIn { duration_frames: 30 }));
+        assert!(matches!(
+            kind,
+            EffectKind::FadeIn {
+                duration_frames: 30
+            }
+        ));
     }
 
     #[test]
     fn test_parse_effect_fade_out() {
         let params = json!({ "duration_frames": 45 });
         let kind = parse_effect_kind("fade_out", &params).unwrap();
-        assert!(matches!(kind, EffectKind::FadeOut { duration_frames: 45 }));
+        assert!(matches!(
+            kind,
+            EffectKind::FadeOut {
+                duration_frames: 45
+            }
+        ));
     }
 
     #[test]
     fn test_parse_effect_volume() {
         let params = json!({ "gain_db": -6.0 });
         let kind = parse_effect_kind("volume", &params).unwrap();
-        assert!(matches!(kind, EffectKind::Volume { gain_db } if (gain_db - (-6.0)).abs() < f32::EPSILON));
+        assert!(
+            matches!(kind, EffectKind::Volume { gain_db } if (gain_db - (-6.0)).abs() < f32::EPSILON)
+        );
     }
 
     #[test]
@@ -972,9 +1007,11 @@ mod tests {
         let mut state = ServerState::new();
         handle_create_project(&json!(1), &json!({ "name": "Test" }), &mut state);
 
-        for (i, color) in ["red", "orange", "yellow", "green", "blue", "purple", "white"]
-            .iter()
-            .enumerate()
+        for (i, color) in [
+            "red", "orange", "yellow", "green", "blue", "purple", "white",
+        ]
+        .iter()
+        .enumerate()
         {
             let response = handle_add_marker(
                 &json!(i + 2),
@@ -989,7 +1026,8 @@ mod tests {
     #[tokio::test]
     async fn test_handle_export_no_project() {
         let state = ServerState::new();
-        let response = handle_export(&json!(1), &json!({ "output_path": "/tmp/out.mp4" }), &state).await;
+        let response =
+            handle_export(&json!(1), &json!({ "output_path": "/tmp/out.mp4" }), &state).await;
         assert_eq!(response["result"]["isError"], true);
     }
 
@@ -1011,7 +1049,8 @@ mod tests {
             &json!(2),
             &json!({ "output_path": "/tmp/out.avi", "format": "avi" }),
             &state,
-        ).await;
+        )
+        .await;
         assert_eq!(response["result"]["isError"], true);
         let text = response["result"]["content"][0]["text"].as_str().unwrap();
         assert!(text.contains("Unsupported format"));
