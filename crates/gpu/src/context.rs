@@ -149,6 +149,29 @@ impl GpuContext {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gpu_error_display() {
+        let e = GpuError::NoDevice;
+        assert_eq!(e.to_string(), "no suitable GPU found");
+
+        let e = GpuError::ShaderCompilation("bad shader".into());
+        assert!(e.to_string().contains("bad shader"));
+
+        let e = GpuError::BufferNotMapped;
+        assert_eq!(e.to_string(), "buffer not mapped for access");
+
+        let e = GpuError::FrameSource("missing frame".into());
+        assert!(e.to_string().contains("missing frame"));
+
+        let e = GpuError::Allocator("out of memory".into());
+        assert!(e.to_string().contains("out of memory"));
+    }
+}
+
 impl Drop for GpuContext {
     fn drop(&mut self) {
         unsafe {

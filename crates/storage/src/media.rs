@@ -86,4 +86,46 @@ mod tests {
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), MediaError::NotFound(_)));
     }
+
+    #[test]
+    fn root_returns_project_root() {
+        let store = MediaStore::new("/my/project");
+        assert_eq!(store.root(), Path::new("/my/project"));
+    }
+
+    #[tokio::test]
+    async fn import_copies_file_successfully() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = MediaStore::new(dir.path());
+
+        // Create a source file
+        let source = dir.path().join("source_video.mp4");
+        tokio::fs::write(&source, b"fake video data").await.unwrap();
+
+        let result = store.import(&source).await.unwrap();
+        assert_eq!(result, dir.path().join("media").join("source_video.mp4"));
+        assert!(result.exists());
+    }
+
+    #[test]
+    fn error_display_messages() {
+        let e = MediaError::NotFound(PathBuf::from("/missing.mp4"));
+        assert!(e.to_string().contains("/missing.mp4"));
+
+        let e = MediaError::UnsupportedFormat("xyz".into());
+        assert!(e.to_string().contains("xyz"));
+    }
+
+    #[test]
+    fn asset_path_various_filenames() {
+        let store = MediaStore::new("/project");
+        assert_eq!(
+            store.asset_path("audio.wav"),
+            PathBuf::from("/project/media/audio.wav")
+        );
+        assert_eq!(
+            store.asset_path("image.png"),
+            PathBuf::from("/project/media/image.png")
+        );
+    }
 }

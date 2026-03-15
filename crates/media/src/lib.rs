@@ -26,3 +26,19 @@ pub fn init() -> Result<(), MediaPipelineError> {
     });
     result
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gstreamer_init_succeeds() {
+        assert!(init().is_ok());
+    }
+
+    #[test]
+    fn gstreamer_init_idempotent() {
+        assert!(init().is_ok());
+        assert!(init().is_ok());
+    }
+}

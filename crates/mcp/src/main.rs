@@ -602,3 +602,418 @@ fn parse_effect_kind(name: &str, params: &Value) -> Result<EffectKind, String> {
         _ => Err(format!("Unknown effect: {name}")),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mcp_success_format() {
+        let id = json!(1);
+        let result = mcp_success(&id, "hello");
+        assert_eq!(result["jsonrpc"], "2.0");
+        assert_eq!(result["id"], 1);
+        assert_eq!(result["result"]["content"][0]["type"], "text");
+        assert_eq!(result["result"]["content"][0]["text"], "hello");
+    }
+
+    #[test]
+    fn test_mcp_error_format() {
+        let id = json!(2);
+        let result = mcp_error(&id, "something failed");
+        assert_eq!(result["jsonrpc"], "2.0");
+        assert_eq!(result["id"], 2);
+        assert_eq!(result["result"]["isError"], true);
+        assert_eq!(result["result"]["content"][0]["text"], "something failed");
+    }
+
+    #[test]
+    fn test_server_state_new() {
+        let state = ServerState::new();
+        assert!(state.project.is_none());
+        assert!(state.project_path.is_none());
+    }
+
+    #[test]
+    fn test_server_state_project_none() {
+        let state = ServerState::new();
+        assert!(state.project().is_err());
+    }
+
+    #[test]
+    fn test_server_state_project_mut_none() {
+        let mut state = ServerState::new();
+        assert!(state.project_mut().is_err());
+    }
+
+    #[test]
+    fn test_server_state_with_project() {
+        let mut state = ServerState::new();
+        state.project = Some(Project::new("test", ProjectSettings::default()));
+        assert!(state.project().is_ok());
+        assert!(state.project_mut().is_ok());
+    }
+
+    #[test]
+    fn test_find_track_id_by_name() {
+        let mut timeline = Timeline::new();
+        let track = Track::new("Video 1", TrackKind::Video);
+        let expected_id = track.id;
+        timeline.add_track(track);
+
+        let found = find_track_id(&timeline, "Video 1");
+        assert_eq!(found, Some(expected_id));
+    }
+
+    #[test]
+    fn test_find_track_id_by_uuid() {
+        let mut timeline = Timeline::new();
+        let track = Track::new("V1", TrackKind::Video);
+        let track_id = track.id;
+        timeline.add_track(track);
+
+        let found = find_track_id(&timeline, &track_id.0.to_string());
+        assert_eq!(found, Some(track_id));
+    }
+
+    #[test]
+    fn test_find_track_id_not_found() {
+        let timeline = Timeline::new();
+        assert!(find_track_id(&timeline, "Nonexistent").is_none());
+    }
+
+    #[test]
+    fn test_parse_effect_color_grade() {
+        let params = json!({ "brightness": 0.5, "contrast": 1.2, "saturation": 0.8, "temperature": -0.1 });
+        let kind = parse_effect_kind("color_grade", &params).unwrap();
+        match kind {
+            EffectKind::ColorGrade { brightness, contrast, saturation, temperature } => {
+                assert!((brightness - 0.5).abs() < f32::EPSILON);
+                assert!((contrast - 1.2).abs() < f32::EPSILON);
+                assert!((saturation - 0.8).abs() < f32::EPSILON);
+                assert!((temperature - (-0.1)).abs() < f32::EPSILON);
+            }
+            _ => panic!("expected ColorGrade"),
+        }
+    }
+
+    #[test]
+    fn test_parse_effect_color_grade_defaults() {
+        let params = json!({});
+        let kind = parse_effect_kind("color_grade", &params).unwrap();
+        match kind {
+            EffectKind::ColorGrade { brightness, contrast, saturation, temperature } => {
+                assert!((brightness - 0.0).abs() < f32::EPSILON);
+                assert!((contrast - 1.0).abs() < f32::EPSILON);
+                assert!((saturation - 1.0).abs() < f32::EPSILON);
+                assert!((temperature - 0.0).abs() < f32::EPSILON);
+            }
+            _ => panic!("expected ColorGrade"),
+        }
+    }
+
+    #[test]
+    fn test_parse_effect_crop() {
+        let params = json!({ "left": 0.1, "top": 0.2, "right": 0.3, "bottom": 0.4 });
+        let kind = parse_effect_kind("crop", &params).unwrap();
+        match kind {
+            EffectKind::Crop { left, top, right, bottom } => {
+                assert!((left - 0.1).abs() < f32::EPSILON);
+                assert!((top - 0.2).abs() < f32::EPSILON);
+                assert!((right - 0.3).abs() < f32::EPSILON);
+                assert!((bottom - 0.4).abs() < f32::EPSILON);
+            }
+            _ => panic!("expected Crop"),
+        }
+    }
+
+    #[test]
+    fn test_parse_effect_speed() {
+        let params = json!({ "factor": 2.0 });
+        let kind = parse_effect_kind("speed", &params).unwrap();
+        assert!(matches!(kind, EffectKind::Speed { factor } if (factor - 2.0).abs() < f32::EPSILON));
+    }
+
+    #[test]
+    fn test_parse_effect_speed_negative() {
+        let params = json!({ "factor": -1.0 });
+        assert!(parse_effect_kind("speed", &params).is_err());
+    }
+
+    #[test]
+    fn test_parse_effect_speed_zero() {
+        let params = json!({ "factor": 0.0 });
+        assert!(parse_effect_kind("speed", &params).is_err());
+    }
+
+    #[test]
+    fn test_parse_effect_fade_in() {
+        let params = json!({ "duration_frames": 60 });
+        let kind = parse_effect_kind("fade_in", &params).unwrap();
+        assert!(matches!(kind, EffectKind::FadeIn { duration_frames: 60 }));
+    }
+
+    #[test]
+    fn test_parse_effect_fade_in_default() {
+        let params = json!({});
+        let kind = parse_effect_kind("fade_in", &params).unwrap();
+        assert!(matches!(kind, EffectKind::FadeIn { duration_frames: 30 }));
+    }
+
+    #[test]
+    fn test_parse_effect_fade_out() {
+        let params = json!({ "duration_frames": 45 });
+        let kind = parse_effect_kind("fade_out", &params).unwrap();
+        assert!(matches!(kind, EffectKind::FadeOut { duration_frames: 45 }));
+    }
+
+    #[test]
+    fn test_parse_effect_volume() {
+        let params = json!({ "gain_db": -6.0 });
+        let kind = parse_effect_kind("volume", &params).unwrap();
+        assert!(matches!(kind, EffectKind::Volume { gain_db } if (gain_db - (-6.0)).abs() < f32::EPSILON));
+    }
+
+    #[test]
+    fn test_parse_effect_unknown() {
+        let params = json!({});
+        assert!(parse_effect_kind("nonexistent", &params).is_err());
+    }
+
+    #[tokio::test]
+    async fn test_handle_request_initialize() {
+        let mut state = ServerState::new();
+        let request = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {}
+        });
+        let response = handle_request(&request, &mut state).await;
+        assert_eq!(response["result"]["protocolVersion"], "2024-11-05");
+        assert_eq!(response["result"]["serverInfo"]["name"], "tazama-mcp");
+    }
+
+    #[tokio::test]
+    async fn test_handle_request_tools_list() {
+        let mut state = ServerState::new();
+        let request = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/list",
+            "params": {}
+        });
+        let response = handle_request(&request, &mut state).await;
+        let tools = response["result"]["tools"].as_array().unwrap();
+        assert_eq!(tools.len(), 6);
+    }
+
+    #[tokio::test]
+    async fn test_handle_request_unknown_method() {
+        let mut state = ServerState::new();
+        let request = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "bogus",
+            "params": {}
+        });
+        let response = handle_request(&request, &mut state).await;
+        assert_eq!(response["error"]["code"], -32601);
+    }
+
+    #[tokio::test]
+    async fn test_handle_create_project() {
+        let mut state = ServerState::new();
+        let id = json!(1);
+        let args = json!({ "name": "My Project", "width": 1280, "height": 720 });
+        let response = handle_create_project(&id, &args, &mut state);
+        let text = response["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("My Project"));
+        assert!(text.contains("1280x720"));
+        assert!(state.project.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_handle_create_project_missing_name() {
+        let mut state = ServerState::new();
+        let id = json!(1);
+        let args = json!({});
+        let response = handle_create_project(&id, &args, &mut state);
+        assert_eq!(response["result"]["isError"], true);
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_timeline_no_project() {
+        let state = ServerState::new();
+        let id = json!(1);
+        let response = handle_get_timeline(&id, &state);
+        assert_eq!(response["result"]["isError"], true);
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_timeline_with_project() {
+        let mut state = ServerState::new();
+        let id = json!(1);
+        let args = json!({ "name": "Test" });
+        handle_create_project(&id, &args, &mut state);
+
+        let response = handle_get_timeline(&json!(2), &state);
+        let text = response["result"]["content"][0]["text"].as_str().unwrap();
+        let _timeline: Value = serde_json::from_str(text).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_handle_add_marker() {
+        let mut state = ServerState::new();
+        handle_create_project(&json!(1), &json!({ "name": "Test" }), &mut state);
+
+        let response = handle_add_marker(
+            &json!(2),
+            &json!({ "name": "Ch1", "frame": 100, "color": "green" }),
+            &mut state,
+        );
+        let text = response["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("Added marker"));
+    }
+
+    #[tokio::test]
+    async fn test_handle_add_marker_missing_name() {
+        let mut state = ServerState::new();
+        handle_create_project(&json!(1), &json!({ "name": "Test" }), &mut state);
+
+        let response = handle_add_marker(&json!(2), &json!({ "frame": 10 }), &mut state);
+        assert_eq!(response["result"]["isError"], true);
+    }
+
+    #[tokio::test]
+    async fn test_handle_add_marker_missing_frame() {
+        let mut state = ServerState::new();
+        handle_create_project(&json!(1), &json!({ "name": "Test" }), &mut state);
+
+        let response = handle_add_marker(&json!(2), &json!({ "name": "M1" }), &mut state);
+        assert_eq!(response["result"]["isError"], true);
+    }
+
+    #[tokio::test]
+    async fn test_handle_add_marker_bad_color() {
+        let mut state = ServerState::new();
+        handle_create_project(&json!(1), &json!({ "name": "Test" }), &mut state);
+
+        let response = handle_add_marker(
+            &json!(2),
+            &json!({ "name": "M1", "frame": 0, "color": "neon" }),
+            &mut state,
+        );
+        assert_eq!(response["result"]["isError"], true);
+    }
+
+    #[tokio::test]
+    async fn test_handle_apply_effect_no_project() {
+        let mut state = ServerState::new();
+        let response = handle_apply_effect(
+            &json!(1),
+            &json!({ "clip_id": "00000000-0000-0000-0000-000000000000", "effect": "crop" }),
+            &mut state,
+        );
+        assert_eq!(response["result"]["isError"], true);
+    }
+
+    #[tokio::test]
+    async fn test_handle_apply_effect_missing_clip_id() {
+        let mut state = ServerState::new();
+        handle_create_project(&json!(1), &json!({ "name": "Test" }), &mut state);
+
+        let response = handle_apply_effect(&json!(2), &json!({ "effect": "crop" }), &mut state);
+        assert_eq!(response["result"]["isError"], true);
+    }
+
+    #[tokio::test]
+    async fn test_handle_apply_effect_invalid_uuid() {
+        let mut state = ServerState::new();
+        handle_create_project(&json!(1), &json!({ "name": "Test" }), &mut state);
+
+        let response = handle_apply_effect(
+            &json!(2),
+            &json!({ "clip_id": "bad-uuid", "effect": "crop" }),
+            &mut state,
+        );
+        assert_eq!(response["result"]["isError"], true);
+    }
+
+    #[tokio::test]
+    async fn test_handle_tool_call_unknown_tool() {
+        let mut state = ServerState::new();
+        let id = json!(1);
+        let response = handle_tool_call(&id, "bogus_tool", &json!({}), &mut state).await;
+        assert_eq!(response["result"]["isError"], true);
+        let text = response["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("Unknown tool"));
+    }
+
+    #[tokio::test]
+    async fn test_handle_request_tools_call_dispatch() {
+        let mut state = ServerState::new();
+        let request = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "tazama_create_project",
+                "arguments": { "name": "Dispatch Test" }
+            }
+        });
+        let response = handle_request(&request, &mut state).await;
+        let text = response["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("Dispatch Test"));
+    }
+
+    #[tokio::test]
+    async fn test_handle_add_marker_all_colors() {
+        let mut state = ServerState::new();
+        handle_create_project(&json!(1), &json!({ "name": "Test" }), &mut state);
+
+        for (i, color) in ["red", "orange", "yellow", "green", "blue", "purple", "white"]
+            .iter()
+            .enumerate()
+        {
+            let response = handle_add_marker(
+                &json!(i + 2),
+                &json!({ "name": format!("M{i}"), "frame": i * 10, "color": color }),
+                &mut state,
+            );
+            let text = response["result"]["content"][0]["text"].as_str().unwrap();
+            assert!(text.contains("Added marker"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_export_no_project() {
+        let state = ServerState::new();
+        let response = handle_export(&json!(1), &json!({ "output_path": "/tmp/out.mp4" }), &state).await;
+        assert_eq!(response["result"]["isError"], true);
+    }
+
+    #[tokio::test]
+    async fn test_handle_export_missing_output_path() {
+        let mut state = ServerState::new();
+        handle_create_project(&json!(1), &json!({ "name": "Test" }), &mut state);
+
+        let response = handle_export(&json!(2), &json!({}), &state).await;
+        assert_eq!(response["result"]["isError"], true);
+    }
+
+    #[tokio::test]
+    async fn test_handle_export_unsupported_format() {
+        let mut state = ServerState::new();
+        handle_create_project(&json!(1), &json!({ "name": "Test" }), &mut state);
+
+        let response = handle_export(
+            &json!(2),
+            &json!({ "output_path": "/tmp/out.avi", "format": "avi" }),
+            &state,
+        ).await;
+        assert_eq!(response["result"]["isError"], true);
+        let text = response["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("Unsupported format"));
+    }
+}

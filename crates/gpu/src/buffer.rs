@@ -95,3 +95,25 @@ impl GpuBuffer {
         self.buffer
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn frame_buffer_size_1080p() {
+        assert_eq!(GpuBuffer::frame_buffer_size(1920, 1080), 1920 * 1080 * 4);
+    }
+
+    #[test]
+    fn frame_buffer_size_4k() {
+        assert_eq!(GpuBuffer::frame_buffer_size(3840, 2160), 3840 * 2160 * 4);
+    }
+
+    #[test]
+    fn frame_buffer_size_zero() {
+        assert_eq!(GpuBuffer::frame_buffer_size(0, 0), 0);
+        assert_eq!(GpuBuffer::frame_buffer_size(1920, 0), 0);
+        assert_eq!(GpuBuffer::frame_buffer_size(0, 1080), 0);
+    }
+}

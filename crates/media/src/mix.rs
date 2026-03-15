@@ -321,10 +321,10 @@ mod tests {
         };
 
         // Simulate mixing manually
-        let mut mix = vec![0.0f32; 4];
+        let mut mix = [0.0f32; 4];
         for clip in &[&clip_a, &clip_b] {
-            for i in 0..4 {
-                mix[i] += clip.samples[i] * clip.volume;
+            for (i, m) in mix.iter_mut().enumerate().take(4) {
+                *m += clip.samples[i] * clip.volume;
             }
         }
 
@@ -347,10 +347,10 @@ mod tests {
             volume: 1.0,
         };
 
-        let mut mix = vec![0.0f32; 4];
+        let mut mix = [0.0f32; 4];
         for clip in &[&clip_a, &clip_b] {
-            for i in 0..4 {
-                mix[i] += clip.samples[i] * clip.volume;
+            for (i, m) in mix.iter_mut().enumerate().take(4) {
+                *m += clip.samples[i] * clip.volume;
             }
         }
         // Clamp
