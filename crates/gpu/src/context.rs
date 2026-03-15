@@ -149,6 +149,21 @@ impl GpuContext {
     }
 }
 
+impl Drop for GpuContext {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = self.device.device_wait_idle();
+            self.device.destroy_command_pool(self.command_pool, None);
+            // Drop allocator before device — take() removes it from the Option
+            // so it is dropped here, before the device is destroyed.
+            let allocator = self.allocator.get_mut().unwrap_or_else(|e| e.into_inner());
+            drop(allocator.take());
+            self.device.destroy_device(None);
+            self.instance.destroy_instance(None);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -169,20 +184,5 @@ mod tests {
 
         let e = GpuError::Allocator("out of memory".into());
         assert!(e.to_string().contains("out of memory"));
-    }
-}
-
-impl Drop for GpuContext {
-    fn drop(&mut self) {
-        unsafe {
-            let _ = self.device.device_wait_idle();
-            self.device.destroy_command_pool(self.command_pool, None);
-            // Drop allocator before device — take() removes it from the Option
-            // so it is dropped here, before the device is destroyed.
-            let allocator = self.allocator.get_mut().unwrap_or_else(|e| e.into_inner());
-            drop(allocator.take());
-            self.device.destroy_device(None);
-            self.instance.destroy_instance(None);
-        }
     }
 }
