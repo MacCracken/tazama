@@ -188,9 +188,8 @@ pub struct PreviewFrame {
 
 /// Render a single preview frame at the given timeline position.
 ///
-/// Finds the topmost visible video clip active at `frame_index`, decodes its
-/// source frame, and returns the RGBA data as base64. If no clip is active,
-/// returns a transparent black frame.
+/// Runs the full GPU render pipeline (effects, compositing, transitions) so the
+/// preview matches what export produces.
 #[tauri::command]
 pub async fn render_preview_frame(
     project: Project,
@@ -200,64 +199,42 @@ pub async fn render_preview_frame(
 
     let width = project.settings.width;
     let height = project.settings.height;
+
+    // Fast path: no clips at this frame → return black without touching the GPU
+    if project.timeline.topmost_video_clip_at(frame_index).is_none() {
+        let black = vec![0u8; (width * height * 4) as usize];
+        return Ok(PreviewFrame {
+            data: base64::engine::general_purpose::STANDARD.encode(&black),
+            width,
+            height,
+        });
+    }
+
+    let settings = project.settings.clone();
+    let timeline = project.timeline.clone();
     let frame_rate = (
-        project.settings.frame_rate.numerator,
-        project.settings.frame_rate.denominator,
+        settings.frame_rate.numerator,
+        settings.frame_rate.denominator,
     );
 
-    let clip = match project.timeline.topmost_video_clip_at(frame_index) {
-        Some(c) => c,
-        None => {
-            // Return black frame
-            let black = vec![0u8; (width * height * 4) as usize];
-            return Ok(PreviewFrame {
-                data: base64::engine::general_purpose::STANDARD.encode(&black),
-                width,
-                height,
-            });
-        }
-    };
+    let gpu_frame = tokio::task::spawn_blocking(move || -> Result<tazama_gpu::GpuFrame, String> {
+        let gpu_ctx = Arc::new(
+            tazama_gpu::GpuContext::new().map_err(|e| format!("GPU init failed: {e}"))?,
+        );
+        let renderer = tazama_gpu::Renderer::new(Arc::clone(&gpu_ctx))
+            .map_err(|e| format!("renderer init failed: {e}"))?;
+        let frame_source = Arc::new(crate::frame_source::MediaFrameSource::new(frame_rate));
 
-    let media_path = match &clip.media {
-        Some(m) => m.path.clone(),
-        None => {
-            let black = vec![0u8; (width * height * 4) as usize];
-            return Ok(PreviewFrame {
-                data: base64::engine::general_purpose::STANDARD.encode(&black),
-                width,
-                height,
-            });
-        }
-    };
-
-    // Calculate source frame index (apply speed if present)
-    let speed_factor = clip
-        .effects
-        .iter()
-        .find_map(|e| {
-            if let tazama_core::EffectKind::Speed { factor } = &e.kind {
-                Some(*factor)
-            } else {
-                None
-            }
-        })
-        .unwrap_or(1.0);
-
-    let local_frame = frame_index - clip.timeline_start;
-    let source_frame = clip.source_offset + (local_frame as f32 * speed_factor) as u64;
-
-    // Decode the source frame
-    let video_frame = tazama_media::decode::video::VideoDecoder::decode_frame(
-        std::path::Path::new(&media_path),
-        source_frame,
-        frame_rate,
-    )
+        renderer
+            .render_frame(&timeline, frame_index, frame_source.as_ref(), &settings)
+            .map_err(|e| format!("render frame: {e}"))
+    })
     .await
-    .map_err(|e| format!("decode frame: {e}"))?;
+    .map_err(|e| e.to_string())??;
 
     Ok(PreviewFrame {
-        data: base64::engine::general_purpose::STANDARD.encode(&video_frame.data),
-        width: video_frame.width,
-        height: video_frame.height,
+        data: base64::engine::general_purpose::STANDARD.encode(&gpu_frame.data),
+        width: gpu_frame.width,
+        height: gpu_frame.height,
     })
 }

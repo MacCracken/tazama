@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026.3.15
+
+### GPU-Accelerated Preview
+
+#### Preview Rendering (`tazama`)
+- `render_preview_frame` now runs the full GPU render pipeline (Vulkan compute effects, multi-track compositing, transitions) instead of raw source frame decode
+- Preview output matches export: ColorGrade, Crop, Speed, dissolve/wipe/fade transitions all visible in real-time scrubbing
+- Fast path: skips GPU init when no clips are active at the requested frame (returns black)
+- GPU context and renderer created per-request on a blocking task to avoid blocking the async runtime
+
+#### Batch Import Error Feedback (`ui/`)
+- Import now accumulates per-file success/failure results and shows a summary toast after the batch completes
+- On partial failure: "Imported N of M files. Failed: filename: reason" with per-file detail
+- On total failure: "All N imports failed" with per-file detail
+- On full success of multi-file import: "Imported N files" success toast
+- Toast component updated to render multi-line messages
+
+#### Infrastructure
+- Dockerfile for `tazama-mcp` server (multi-stage build, AGNOS runtime base, GStreamer + ALSA runtime libs)
+- `.dockerignore` excluding target/, node_modules/, dist/, ui/, docs/, .git/
+
 ## 2026.3.13
 
 ### Export Integration & Preview

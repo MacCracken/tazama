@@ -43,8 +43,8 @@ Tauri v2 + React 19 / TypeScript / Vite / Tailwind v4 / Zustand frontend.
 
 ## Engineering Backlog
 
-- [ ] Per-file error feedback in batch import — currently shows toast per failure but doesn't indicate which files succeeded in batch
-- [ ] GPU-accelerated preview — current preview decodes source frames only; wire GPU Renderer into the preview loop to show effects in real-time
+- [x] Per-file error feedback in batch import — accumulates results and shows summary toast with per-file detail (2026.3.15)
+- [x] GPU-accelerated preview — `render_preview_frame` now runs the full GPU Renderer pipeline with effects, compositing, and transitions (2026.3.15)
 
 ---
 

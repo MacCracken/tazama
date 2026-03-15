@@ -1,6 +1,6 @@
 [agent]
 name = "tazama"
-version = "2026.3.13"
+version = "2026.3.15"
 description = "AI-native non-linear video editor — create, edit, and export video projects"
 mcp_server = "tazama-mcp"
 mcp_transport = "stdio"

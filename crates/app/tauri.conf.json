@@ -1,6 +1,6 @@
 {
   "productName": "Tazama",
-  "version": "2026.3.13",
+  "version": "2026.3.15",
   "identifier": "com.anomalyco.tazama",
   "build": {
     "frontendDist": "../../ui/dist",

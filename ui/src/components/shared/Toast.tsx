@@ -29,7 +29,9 @@ export function Toast() {
         color: "var(--text-primary)",
       }}
     >
-      {message}
+      {message.split("\n").map((line, i) => (
+        <div key={i}>{line}</div>
+      ))}
     </div>
   );
 }
