@@ -50,6 +50,15 @@ Tauri v2 + React 19 / TypeScript / Vite / Tailwind v4 / Zustand frontend.
 
 ## Post-v1 Features
 
+### Tarang Media Backend Migration
+- Replace GStreamer/ffmpeg dependency with **tarang** (`/home/macro/Repos/tarang`) for decode pipeline
+- `tarang-demux` for container parsing (MP4, MKV, WebM)
+- `tarang-audio` for audio decode (pure Rust via symphonia — already used by Shruti's sampler)
+- `tarang-video` for video decode (dav1d/openh264/libvpx via thin Rust FFI)
+- `tarang-ai` for scene detection, content classification, transcription routing
+- **Benefit**: Drops massive ffmpeg dep, memory-safe pipeline, shared codebase with Shruti and AGNOS media player
+- **Effort**: Medium — replace GStreamer probe/decode calls with tarang equivalents
+
 ### Audio Editing
 - Audio mixer panel (per-track volume, pan, mute/solo)
 - Audio effects (EQ, compressor, noise reduction, reverb)
