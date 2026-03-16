@@ -11,6 +11,10 @@ use crate::error::MediaPipelineError;
 #[cfg(feature = "tarang")]
 const AUDIO_EXTENSIONS: &[&str] = &["wav", "mp3", "flac", "ogg", "m4a", "aac"];
 
+/// Video file extensions handled by tarang demux when the feature is enabled.
+#[cfg(feature = "tarang")]
+const VIDEO_EXTENSIONS: &[&str] = &["mp4", "m4v", "mkv", "webm"];
+
 /// Probe a media file and extract its metadata.
 pub async fn probe(path: &Path) -> Result<MediaInfo, MediaPipelineError> {
     let path = path.to_path_buf();
@@ -22,6 +26,16 @@ pub async fn probe(path: &Path) -> Result<MediaInfo, MediaPipelineError> {
 fn probe_sync(path: &Path) -> Result<MediaInfo, MediaPipelineError> {
     if !path.exists() {
         return Err(MediaPipelineError::FileNotFound(path.display().to_string()));
+    }
+
+    #[cfg(feature = "tarang")]
+    if is_video_file(path) {
+        match probe_tarang_video(path) {
+            Ok(info) => return Ok(info),
+            Err(e) => {
+                tracing::warn!("tarang video probe failed, falling back to GStreamer: {e}");
+            }
+        }
     }
 
     #[cfg(feature = "tarang")]
@@ -148,6 +162,153 @@ fn probe_tarang(path: &Path) -> Result<MediaInfo, MediaPipelineError> {
         audio_streams,
         file_size,
     })
+}
+
+#[cfg(feature = "tarang")]
+fn is_video_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| VIDEO_EXTENSIONS.contains(&e.to_lowercase().as_str()))
+        .unwrap_or(false)
+}
+
+#[cfg(feature = "tarang")]
+fn probe_tarang_video(path: &Path) -> Result<MediaInfo, MediaPipelineError> {
+    use std::io::Read;
+    use tarang_demux::Demuxer;
+
+    let mut file = std::fs::File::open(path)?;
+    let mut header = [0u8; 32];
+    let n = file.read(&mut header)?;
+    drop(file);
+
+    let format = tarang_demux::detect_format(&header[..n])
+        .map_err(|e| MediaPipelineError::ProbeFailed {
+            path: path.display().to_string(),
+            reason: e.to_string(),
+        })?;
+
+    let file = std::fs::File::open(path)?;
+    let reader = std::io::BufReader::new(file);
+    let mut demuxer: Box<dyn Demuxer> = match format {
+        tarang_core::ContainerFormat::Mp4 => Box::new(tarang_demux::Mp4Demuxer::new(reader)),
+        tarang_core::ContainerFormat::Mkv | tarang_core::ContainerFormat::WebM => {
+            Box::new(tarang_demux::MkvDemuxer::new(reader))
+        }
+        other => {
+            return Err(MediaPipelineError::UnsupportedFormat(format!("{other:?}")));
+        }
+    };
+
+    let tarang_info = demuxer.probe().map_err(|e| MediaPipelineError::ProbeFailed {
+        path: path.display().to_string(),
+        reason: e.to_string(),
+    })?;
+
+    let container = detect_container(path);
+    let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    let duration_ms = tarang_info
+        .duration
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+
+    let mut video_streams = Vec::new();
+    let mut audio_streams = Vec::new();
+
+    for stream in &tarang_info.streams {
+        match stream {
+            tarang_core::StreamInfo::Video(vs) => {
+                let frame_rate = f64_to_rational(vs.frame_rate);
+                video_streams.push(VideoStreamInfo {
+                    codec: map_tarang_video_codec(vs.codec),
+                    width: vs.width,
+                    height: vs.height,
+                    frame_rate,
+                    bit_depth: 8,
+                    pixel_format: format!("{:?}", vs.pixel_format).to_lowercase(),
+                });
+            }
+            tarang_core::StreamInfo::Audio(aus) => {
+                audio_streams.push(AudioStreamInfo {
+                    codec: map_tarang_audio_codec(aus.codec),
+                    sample_rate: aus.sample_rate,
+                    channels: aus.channels,
+                    bit_depth: aus.sample_format.bytes_per_sample() as u32 * 8,
+                });
+            }
+            _ => {}
+        }
+    }
+
+    let duration_frames = if let Some(vs) = video_streams.first() {
+        let (num, den) = vs.frame_rate;
+        if den > 0 {
+            (duration_ms as f64 * num as f64 / den as f64 / 1000.0).round() as u64
+        } else {
+            0
+        }
+    } else {
+        0
+    };
+
+    Ok(MediaInfo {
+        duration_ms,
+        duration_frames,
+        container,
+        video_streams,
+        audio_streams,
+        file_size,
+    })
+}
+
+#[cfg(feature = "tarang")]
+fn map_tarang_video_codec(codec: tarang_core::VideoCodec) -> Codec {
+    match codec {
+        tarang_core::VideoCodec::H264 => Codec::H264,
+        tarang_core::VideoCodec::H265 => Codec::H265,
+        tarang_core::VideoCodec::Vp9 => Codec::Vp9,
+        tarang_core::VideoCodec::Av1 => Codec::Av1,
+        _ => Codec::Other,
+    }
+}
+
+/// Convert an f64 frame rate to a (numerator, denominator) rational approximation.
+#[cfg(feature = "tarang")]
+fn f64_to_rational(fps: f64) -> (u32, u32) {
+    if fps <= 0.0 {
+        return (0, 1);
+    }
+    // Common frame rates — check exact matches first
+    let common = [
+        (24000, 1001, 23.976),
+        (24, 1, 24.0),
+        (25, 1, 25.0),
+        (30000, 1001, 29.97),
+        (30, 1, 30.0),
+        (50, 1, 50.0),
+        (60000, 1001, 59.94),
+        (60, 1, 60.0),
+    ];
+    for (num, den, expected) in common {
+        if (fps - expected).abs() < 0.01 {
+            return (num, den);
+        }
+    }
+    // Fallback: multiply by 1000 and simplify
+    let num = (fps * 1000.0).round() as u32;
+    let den = 1000u32;
+    let g = gcd(num, den);
+    (num / g, den / g)
+}
+
+#[cfg(feature = "tarang")]
+fn gcd(mut a: u32, mut b: u32) -> u32 {
+    while b != 0 {
+        let t = b;
+        b = a % b;
+        a = t;
+    }
+    a
 }
 
 #[cfg(feature = "tarang")]

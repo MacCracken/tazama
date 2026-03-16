@@ -10,6 +10,18 @@ use tracing::{debug, error};
 use super::{DecoderConfig, FrameRange, VideoFrame};
 use crate::error::MediaPipelineError;
 
+/// Video file extensions handled by tarang when the feature is enabled.
+#[cfg(feature = "tarang")]
+const TARANG_VIDEO_EXTENSIONS: &[&str] = &["mp4", "m4v", "mkv", "webm"];
+
+#[cfg(feature = "tarang")]
+fn is_tarang_video(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| TARANG_VIDEO_EXTENSIONS.contains(&e.to_lowercase().as_str()))
+        .unwrap_or(false)
+}
+
 /// RAII guard that sets a GStreamer pipeline to Null on drop.
 struct PipelineGuard(gstreamer::Pipeline);
 
@@ -38,6 +50,14 @@ impl VideoDecoder {
         let (tx, rx) = mpsc::channel(16);
 
         task::spawn_blocking(move || {
+            #[cfg(feature = "tarang")]
+            if is_tarang_video(&path) {
+                if let Err(e) = decode_tarang_video(&path, range, tx.clone()) {
+                    error!("tarang video decode error: {e}");
+                }
+                return;
+            }
+
             if let Err(e) = decode_video_range(&path, range, tx.clone()) {
                 error!("video decode error: {e}");
             }
@@ -53,9 +73,16 @@ impl VideoDecoder {
         frame_rate: (u32, u32),
     ) -> Result<VideoFrame, MediaPipelineError> {
         let path = path.to_path_buf();
-        task::spawn_blocking(move || decode_single_frame(&path, frame_index, frame_rate))
-            .await
-            .map_err(|e| MediaPipelineError::Decode(e.to_string()))?
+        task::spawn_blocking(move || {
+            #[cfg(feature = "tarang")]
+            if is_tarang_video(&path) {
+                return decode_tarang_single_frame(&path, frame_index, frame_rate);
+            }
+
+            decode_single_frame(&path, frame_index, frame_rate)
+        })
+        .await
+        .map_err(|e| MediaPipelineError::Decode(e.to_string()))?
     }
 }
 
@@ -218,6 +245,196 @@ fn decode_single_frame(
 
     // Guard handles pipeline cleanup
     Ok(frame)
+}
+
+#[cfg(feature = "tarang")]
+fn create_tarang_demuxer(
+    path: &Path,
+) -> Result<Box<dyn tarang_demux::Demuxer>, MediaPipelineError> {
+    use std::io::Read;
+
+    let mut file = std::fs::File::open(path)?;
+    let mut header = [0u8; 32];
+    let n = file.read(&mut header)?;
+    drop(file);
+
+    let format = tarang_demux::detect_format(&header[..n])
+        .map_err(|e| MediaPipelineError::Decode(e.to_string()))?;
+
+    let file = std::fs::File::open(path)?;
+    let reader = std::io::BufReader::new(file);
+    let demuxer: Box<dyn tarang_demux::Demuxer> = match format {
+        tarang_core::ContainerFormat::Mp4 => Box::new(tarang_demux::Mp4Demuxer::new(reader)),
+        tarang_core::ContainerFormat::Mkv | tarang_core::ContainerFormat::WebM => {
+            Box::new(tarang_demux::MkvDemuxer::new(reader))
+        }
+        other => {
+            return Err(MediaPipelineError::UnsupportedFormat(format!("{other:?}")));
+        }
+    };
+    Ok(demuxer)
+}
+
+#[cfg(feature = "tarang")]
+fn create_tarang_decoder(
+    codec: tarang_core::VideoCodec,
+) -> Result<tarang_video::VideoDecoder, MediaPipelineError> {
+    let config = tarang_video::DecoderConfig::for_codec(codec)?;
+    let decoder = tarang_video::VideoDecoder::new(config)?;
+    Ok(decoder)
+}
+
+/// Find the first video stream index and its codec from tarang MediaInfo.
+#[cfg(feature = "tarang")]
+fn find_video_stream(
+    info: &tarang_core::MediaInfo,
+) -> Option<(usize, tarang_core::VideoCodec)> {
+    for (idx, stream) in info.streams.iter().enumerate() {
+        if let tarang_core::StreamInfo::Video(vs) = stream {
+            return Some((idx, vs.codec));
+        }
+    }
+    None
+}
+
+#[cfg(feature = "tarang")]
+fn decode_tarang_video(
+    path: &Path,
+    range: FrameRange,
+    tx: mpsc::Sender<VideoFrame>,
+) -> Result<(), MediaPipelineError> {
+    let mut demuxer = create_tarang_demuxer(path)?;
+    let info = demuxer.probe()?;
+
+    let (video_stream_idx, codec) = find_video_stream(&info)
+        .ok_or_else(|| MediaPipelineError::Decode("no video stream found".into()))?;
+
+    let mut decoder = create_tarang_decoder(codec)?;
+
+    // Initialize decoder with stream info
+    if let Some(tarang_core::StreamInfo::Video(vs)) = info.streams.get(video_stream_idx) {
+        decoder.init(vs);
+    }
+
+    let mut frame_index = 0u64;
+
+    loop {
+        if frame_index > range.end {
+            break;
+        }
+
+        let packet = match demuxer.next_packet() {
+            Ok(p) => p,
+            Err(e) => {
+                let msg = e.to_string();
+                if msg.contains("EndOfStream") || msg.contains("end of stream") {
+                    break;
+                }
+                // Try to continue on transient errors
+                continue;
+            }
+        };
+
+        if packet.stream_index != video_stream_idx {
+            continue;
+        }
+
+        decoder.send_packet(&packet.data, packet.timestamp)?;
+
+        // Drain all available frames from the decoder
+        loop {
+            match decoder.receive_frame() {
+                Ok(tarang_frame) => {
+                    if frame_index >= range.start {
+                        let frame =
+                            crate::convert::tarang_frame_to_tazama(&tarang_frame, frame_index)?;
+                        if tx.blocking_send(frame).is_err() {
+                            debug!("tarang video decode receiver dropped");
+                            return Ok(());
+                        }
+                    }
+                    frame_index += 1;
+                    if frame_index > range.end {
+                        return Ok(());
+                    }
+                }
+                Err(_) => break, // No more frames available, need more packets
+            }
+        }
+    }
+
+    // Flush remaining frames
+    if let Ok(()) = decoder.flush() {
+        loop {
+            match decoder.receive_frame() {
+                Ok(tarang_frame) => {
+                    if frame_index >= range.start && frame_index <= range.end {
+                        let frame =
+                            crate::convert::tarang_frame_to_tazama(&tarang_frame, frame_index)?;
+                        if tx.blocking_send(frame).is_err() {
+                            break;
+                        }
+                    }
+                    frame_index += 1;
+                }
+                Err(_) => break,
+            }
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(feature = "tarang")]
+fn decode_tarang_single_frame(
+    path: &Path,
+    frame_index: u64,
+    frame_rate: (u32, u32),
+) -> Result<VideoFrame, MediaPipelineError> {
+    let mut demuxer = create_tarang_demuxer(path)?;
+    let info = demuxer.probe()?;
+
+    let (video_stream_idx, codec) = find_video_stream(&info)
+        .ok_or_else(|| MediaPipelineError::Decode("no video stream found".into()))?;
+
+    let mut decoder = create_tarang_decoder(codec)?;
+
+    if let Some(tarang_core::StreamInfo::Video(vs)) = info.streams.get(video_stream_idx) {
+        decoder.init(vs);
+    }
+
+    // Seek to the target timestamp
+    let (num, den) = frame_rate;
+    let timestamp = if num > 0 {
+        std::time::Duration::from_nanos(
+            frame_index
+                .checked_mul(den as u64)
+                .and_then(|v| v.checked_mul(1_000_000_000))
+                .map(|v| v / num as u64)
+                .unwrap_or(u64::MAX),
+        )
+    } else {
+        std::time::Duration::ZERO
+    };
+
+    let _ = demuxer.seek(timestamp);
+
+    // Decode until we get a frame
+    loop {
+        let packet = demuxer
+            .next_packet()
+            .map_err(|e| MediaPipelineError::Decode(e.to_string()))?;
+
+        if packet.stream_index != video_stream_idx {
+            continue;
+        }
+
+        decoder.send_packet(&packet.data, packet.timestamp)?;
+
+        if let Ok(tarang_frame) = decoder.receive_frame() {
+            return crate::convert::tarang_frame_to_tazama(&tarang_frame, frame_index);
+        }
+    }
 }
 
 fn sample_to_frame(sample: &gstreamer::Sample, frame_index: u64) -> Option<VideoFrame> {

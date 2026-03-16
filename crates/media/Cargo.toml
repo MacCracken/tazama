@@ -20,11 +20,14 @@ tracing.workspace = true
 cpal.workspace = true
 tarang-core = { workspace = true, optional = true }
 tarang-audio = { workspace = true, optional = true }
+tarang-demux = { workspace = true, optional = true }
+tarang-video = { workspace = true, optional = true }
+tarang-ai = { workspace = true, optional = true }
 symphonia = { version = "0.5", features = ["all"], optional = true }
 
 [features]
 default = []
-tarang = ["dep:tarang-core", "dep:tarang-audio", "dep:symphonia"]
+tarang = ["dep:tarang-core", "dep:tarang-audio", "dep:tarang-demux", "dep:tarang-video", "dep:tarang-ai", "dep:symphonia"]
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

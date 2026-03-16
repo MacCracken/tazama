@@ -64,9 +64,12 @@ bytemuck = { version = "1", features = ["derive"] }
 # Audio
 cpal = "0.15"
 
-# Audio (tarang)
+# Tarang
 tarang-core = { path = "../tarang/crates/tarang-core" }
 tarang-audio = { path = "../tarang/crates/tarang-audio" }
+tarang-demux = { path = "../tarang/crates/tarang-demux" }
+tarang-video = { path = "../tarang/crates/tarang-video", features = ["openh264", "vpx", "dav1d"] }
+tarang-ai = { path = "../tarang/crates/tarang-ai" }
 
 # Encoding
 base64 = "0.22"

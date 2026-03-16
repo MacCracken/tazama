@@ -7,6 +7,9 @@ pub mod probe;
 pub mod thumbnail;
 pub mod waveform;
 
+#[cfg(feature = "tarang")]
+mod convert;
+
 use std::sync::Once;
 
 pub use decode::{AudioBuffer, DecoderConfig, FrameRange, VideoFrame};
