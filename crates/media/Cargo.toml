@@ -18,6 +18,13 @@ bytes.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 cpal.workspace = true
+tarang-core = { workspace = true, optional = true }
+tarang-audio = { workspace = true, optional = true }
+symphonia = { version = "0.5", features = ["all"], optional = true }
+
+[features]
+default = []
+tarang = ["dep:tarang-core", "dep:tarang-audio", "dep:symphonia"]
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

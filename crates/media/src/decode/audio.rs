@@ -9,6 +9,10 @@ use tracing::{debug, error};
 use super::AudioBuffer;
 use crate::error::MediaPipelineError;
 
+/// Audio-only file extensions handled by tarang when the feature is enabled.
+#[cfg(feature = "tarang")]
+const AUDIO_EXTENSIONS: &[&str] = &["wav", "mp3", "flac", "ogg", "m4a", "aac"];
+
 /// RAII guard that sets a GStreamer pipeline to Null on drop.
 struct PipelineGuard(gstreamer::Pipeline);
 
@@ -28,6 +32,14 @@ impl AudioDecoder {
         let (tx, rx) = mpsc::channel(64);
 
         task::spawn_blocking(move || {
+            #[cfg(feature = "tarang")]
+            if is_audio_file(&path) {
+                if let Err(e) = decode_tarang(&path, tx) {
+                    error!("tarang audio decode error: {e}");
+                }
+                return;
+            }
+
             if let Err(e) = decode_audio(&path, tx) {
                 error!("audio decode error: {e}");
             }
@@ -144,6 +156,101 @@ fn decode_audio(path: &Path, tx: mpsc::Sender<AudioBuffer>) -> Result<(), MediaP
     }
 
     // Guard handles pipeline cleanup on all exit paths
+    Ok(())
+}
+
+#[cfg(feature = "tarang")]
+fn is_audio_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| AUDIO_EXTENSIONS.contains(&e.to_lowercase().as_str()))
+        .unwrap_or(false)
+}
+
+#[cfg(feature = "tarang")]
+fn decode_tarang(
+    path: &Path,
+    tx: mpsc::Sender<AudioBuffer>,
+) -> Result<(), MediaPipelineError> {
+    use symphonia::core::audio::SampleBuffer;
+    use symphonia::core::codecs::DecoderOptions;
+    use symphonia::core::formats::FormatOptions;
+    use symphonia::core::io::MediaSourceStream;
+    use symphonia::core::meta::MetadataOptions;
+    use symphonia::core::probe::Hint;
+
+    let file = std::fs::File::open(path)?;
+    let mss = MediaSourceStream::new(Box::new(file), Default::default());
+
+    let mut hint = Hint::new();
+    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        hint.with_extension(ext);
+    }
+
+    let probed = symphonia::default::get_probe()
+        .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
+        .map_err(|e| MediaPipelineError::Decode(e.to_string()))?;
+
+    let mut format = probed.format;
+
+    let track = format
+        .default_track()
+        .ok_or_else(|| MediaPipelineError::Decode("no audio track found".into()))?;
+
+    let track_id = track.id;
+    let mut decoder = symphonia::default::get_codecs()
+        .make(&track.codec_params, &DecoderOptions::default())
+        .map_err(|e| MediaPipelineError::Decode(e.to_string()))?;
+
+    let mut timestamp_ns: u64 = 0;
+
+    loop {
+        let packet = match format.next_packet() {
+            Ok(p) => p,
+            Err(symphonia::core::errors::Error::IoError(ref e))
+                if e.kind() == std::io::ErrorKind::UnexpectedEof =>
+            {
+                break;
+            }
+            Err(_) => break,
+        };
+
+        if packet.track_id() != track_id {
+            continue;
+        }
+
+        let decoded = match decoder.decode(&packet) {
+            Ok(d) => d,
+            Err(_) => continue,
+        };
+
+        let spec = *decoded.spec();
+        let num_frames = decoded.capacity();
+
+        let mut sample_buf = SampleBuffer::<f32>::new(num_frames as u64, spec);
+        sample_buf.copy_interleaved_ref(decoded);
+
+        let buffer = AudioBuffer {
+            sample_rate: spec.rate,
+            channels: spec.channels.count() as u16,
+            samples: sample_buf.samples().to_vec(),
+            timestamp_ns,
+        };
+
+        // Advance timestamp
+        let num_samples = sample_buf.samples().len() as u64;
+        let channels = spec.channels.count() as u64;
+        if channels > 0 && spec.rate > 0 {
+            let frames = num_samples / channels;
+            timestamp_ns += frames * 1_000_000_000 / spec.rate as u64;
+        }
+
+        if tx.blocking_send(buffer).is_err() {
+            debug!("tarang audio decode receiver dropped");
+            break;
+        }
+    }
+
     Ok(())
 }
 

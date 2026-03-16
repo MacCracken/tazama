@@ -64,5 +64,9 @@ bytemuck = { version = "1", features = ["derive"] }
 # Audio
 cpal = "0.15"
 
+# Audio (tarang)
+tarang-core = { path = "../tarang/crates/tarang-core" }
+tarang-audio = { path = "../tarang/crates/tarang-audio" }
+
 # Encoding
 base64 = "0.22"

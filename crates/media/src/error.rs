@@ -25,6 +25,10 @@ pub enum MediaPipelineError {
 
     #[error("pipeline state change failed: {0}")]
     StateChange(String),
+
+    #[cfg(feature = "tarang")]
+    #[error("tarang error: {0}")]
+    Tarang(String),
 }
 
 impl From<gstreamer::glib::Error> for MediaPipelineError {
@@ -36,6 +40,13 @@ impl From<gstreamer::glib::Error> for MediaPipelineError {
 impl From<gstreamer::glib::BoolError> for MediaPipelineError {
     fn from(err: gstreamer::glib::BoolError) -> Self {
         Self::Gstreamer(err.to_string())
+    }
+}
+
+#[cfg(feature = "tarang")]
+impl From<tarang_core::TarangError> for MediaPipelineError {
+    fn from(err: tarang_core::TarangError) -> Self {
+        Self::Tarang(err.to_string())
     }
 }
 

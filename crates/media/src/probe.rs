@@ -7,6 +7,10 @@ use tokio::task;
 
 use crate::error::MediaPipelineError;
 
+/// Audio-only file extensions handled by tarang when the feature is enabled.
+#[cfg(feature = "tarang")]
+const AUDIO_EXTENSIONS: &[&str] = &["wav", "mp3", "flac", "ogg", "m4a", "aac"];
+
 /// Probe a media file and extract its metadata.
 pub async fn probe(path: &Path) -> Result<MediaInfo, MediaPipelineError> {
     let path = path.to_path_buf();
@@ -18,6 +22,11 @@ pub async fn probe(path: &Path) -> Result<MediaInfo, MediaPipelineError> {
 fn probe_sync(path: &Path) -> Result<MediaInfo, MediaPipelineError> {
     if !path.exists() {
         return Err(MediaPipelineError::FileNotFound(path.display().to_string()));
+    }
+
+    #[cfg(feature = "tarang")]
+    if is_audio_file(path) {
+        return probe_tarang(path);
     }
 
     let timeout = gstreamer::ClockTime::from_seconds(10);
@@ -101,6 +110,55 @@ fn probe_sync(path: &Path) -> Result<MediaInfo, MediaPipelineError> {
         audio_streams,
         file_size,
     })
+}
+
+#[cfg(feature = "tarang")]
+fn is_audio_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| AUDIO_EXTENSIONS.contains(&e.to_lowercase().as_str()))
+        .unwrap_or(false)
+}
+
+#[cfg(feature = "tarang")]
+fn probe_tarang(path: &Path) -> Result<MediaInfo, MediaPipelineError> {
+    let file = std::fs::File::open(path)?;
+    let info = tarang_audio::probe_audio(file)?;
+
+    let duration_ms = info.duration.map(|d| d.as_millis() as u64).unwrap_or(0);
+    let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    let container = detect_container(path);
+
+    let audio_streams = info
+        .audio_streams()
+        .into_iter()
+        .map(|s| AudioStreamInfo {
+            codec: map_tarang_audio_codec(s.codec),
+            sample_rate: s.sample_rate,
+            channels: s.channels,
+            bit_depth: s.sample_format.bytes_per_sample() as u32 * 8,
+        })
+        .collect();
+
+    Ok(MediaInfo {
+        duration_ms,
+        duration_frames: 0,
+        container,
+        video_streams: Vec::new(),
+        audio_streams,
+        file_size,
+    })
+}
+
+#[cfg(feature = "tarang")]
+fn map_tarang_audio_codec(codec: tarang_core::AudioCodec) -> Codec {
+    match codec {
+        tarang_core::AudioCodec::Aac => Codec::Aac,
+        tarang_core::AudioCodec::Mp3 => Codec::Mp3,
+        tarang_core::AudioCodec::Flac => Codec::Flac,
+        tarang_core::AudioCodec::Opus => Codec::Opus,
+        _ => Codec::Other,
+    }
 }
 
 fn detect_container(path: &Path) -> ContainerFormat {
