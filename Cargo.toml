@@ -50,15 +50,15 @@ bytes = "1"
 sha2 = "0.10"
 
 # Media / Video
-gstreamer = "0.23"
-gstreamer-video = "0.23"
-gstreamer-audio = "0.23"
-gstreamer-app = "0.23"
-gstreamer-pbutils = "0.23"
+gstreamer = "0.25"
+gstreamer-video = "0.25"
+gstreamer-audio = "0.25"
+gstreamer-app = "0.25"
+gstreamer-pbutils = "0.25"
 
 # GPU
 ash = "0.38"
-gpu-allocator = { version = "0.27", features = ["vulkan"] }
+gpu-allocator = { version = "0.28", features = ["vulkan"] }
 bytemuck = { version = "1", features = ["derive"] }
 
 # Audio
