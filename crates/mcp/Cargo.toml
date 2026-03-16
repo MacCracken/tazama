@@ -20,6 +20,7 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 anyhow.workspace = true
 uuid.workspace = true
+image = "0.25"
 
 [dev-dependencies]
 serde_json.workspace = true

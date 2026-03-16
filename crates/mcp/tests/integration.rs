@@ -83,7 +83,7 @@ fn test_tools_list() {
     }));
 
     let tools = response["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 6);
+    assert_eq!(tools.len(), 7);
 
     let tool_names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
     assert!(tool_names.contains(&"tazama_create_project"));
@@ -92,6 +92,7 @@ fn test_tools_list() {
     assert!(tool_names.contains(&"tazama_get_timeline"));
     assert!(tool_names.contains(&"tazama_export"));
     assert!(tool_names.contains(&"tazama_add_marker"));
+    assert!(tool_names.contains(&"tazama_extract_frame"));
 }
 
 #[test]

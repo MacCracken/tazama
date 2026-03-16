@@ -201,7 +201,11 @@ pub async fn render_preview_frame(
     let height = project.settings.height;
 
     // Fast path: no clips at this frame → return black without touching the GPU
-    if project.timeline.topmost_video_clip_at(frame_index).is_none() {
+    if project
+        .timeline
+        .topmost_video_clip_at(frame_index)
+        .is_none()
+    {
         let black = vec![0u8; (width * height * 4) as usize];
         return Ok(PreviewFrame {
             data: base64::engine::general_purpose::STANDARD.encode(&black),
@@ -218,9 +222,8 @@ pub async fn render_preview_frame(
     );
 
     let gpu_frame = tokio::task::spawn_blocking(move || -> Result<tazama_gpu::GpuFrame, String> {
-        let gpu_ctx = Arc::new(
-            tazama_gpu::GpuContext::new().map_err(|e| format!("GPU init failed: {e}"))?,
-        );
+        let gpu_ctx =
+            Arc::new(tazama_gpu::GpuContext::new().map_err(|e| format!("GPU init failed: {e}"))?);
         let renderer = tazama_gpu::Renderer::new(Arc::clone(&gpu_ctx))
             .map_err(|e| format!("renderer init failed: {e}"))?;
         let frame_source = Arc::new(crate::frame_source::MediaFrameSource::new(frame_rate));

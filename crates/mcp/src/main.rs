@@ -17,6 +17,8 @@ use tazama_core::{
 /// 3. tazama_apply_effect    — Apply an effect to a clip
 /// 4. tazama_get_timeline    — Get the current timeline state
 /// 5. tazama_export          — Export the project to a video file
+/// 6. tazama_add_marker      — Add a named marker to the timeline
+/// 7. tazama_extract_frame   — Extract a single frame from a clip as PNG
 struct ServerState {
     project: Option<Project>,
     history: EditHistory,
@@ -212,6 +214,19 @@ async fn handle_request(request: &Value, state: &mut ServerState) -> Value {
                             },
                             "required": ["name", "frame"]
                         }
+                    },
+                    {
+                        "name": "tazama_extract_frame",
+                        "description": "Extract a single frame from a video clip and save it as a PNG file",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "clip_id": { "type": "string", "description": "UUID of the clip" },
+                                "frame_number": { "type": "integer", "description": "Frame index within the clip" },
+                                "output_path": { "type": "string", "description": "Where to write the PNG file" }
+                            },
+                            "required": ["clip_id", "frame_number", "output_path"]
+                        }
                     }
                 ]
             }
@@ -241,6 +256,7 @@ async fn handle_tool_call(id: &Value, tool: &str, args: &Value, state: &mut Serv
         "tazama_get_timeline" => handle_get_timeline(id, state),
         "tazama_export" => handle_export(id, args, state).await,
         "tazama_add_marker" => handle_add_marker(id, args, state),
+        "tazama_extract_frame" => handle_extract_frame(id, args, state).await,
         _ => mcp_error(id, format!("Unknown tool: {tool}")),
     }
 }
@@ -523,6 +539,95 @@ fn handle_add_marker(id: &Value, args: &Value, state: &mut ServerState) -> Value
         ),
         Err(e) => mcp_error(id, format!("Failed to add marker: {e}")),
     }
+}
+
+async fn handle_extract_frame(id: &Value, args: &Value, state: &ServerState) -> Value {
+    let project = match state.project() {
+        Ok(p) => p,
+        Err(e) => return mcp_error(id, e),
+    };
+
+    let clip_id_str = match args.get("clip_id").and_then(|c| c.as_str()) {
+        Some(c) => c,
+        None => return mcp_error(id, "Missing required parameter: clip_id"),
+    };
+
+    let clip_uuid = match Uuid::parse_str(clip_id_str) {
+        Ok(u) => u,
+        Err(_) => return mcp_error(id, format!("Invalid clip_id: {clip_id_str}")),
+    };
+    let clip_id = ClipId(clip_uuid);
+
+    let frame_number = match args.get("frame_number").and_then(|f| f.as_u64()) {
+        Some(f) => f,
+        None => return mcp_error(id, "Missing required parameter: frame_number"),
+    };
+
+    let output_path = match args.get("output_path").and_then(|p| p.as_str()) {
+        Some(p) => p,
+        None => return mcp_error(id, "Missing required parameter: output_path"),
+    };
+
+    let (_, clip) = match project.timeline.find_clip(clip_id) {
+        Some(r) => r,
+        None => return mcp_error(id, format!("Clip not found: {clip_id_str}")),
+    };
+
+    let media = match &clip.media {
+        Some(m) => m,
+        None => return mcp_error(id, "Clip has no media source"),
+    };
+
+    let media_path = std::path::Path::new(&media.path);
+    let frame_rate = media
+        .info
+        .as_ref()
+        .and_then(|i| i.video_streams.first())
+        .map(|v| v.frame_rate)
+        .unwrap_or((30, 1));
+
+    let actual_frame = clip.source_offset + frame_number;
+
+    let frame = match tazama_media::decode::video::VideoDecoder::decode_frame(
+        media_path,
+        actual_frame,
+        frame_rate,
+    )
+    .await
+    {
+        Ok(f) => f,
+        Err(e) => return mcp_error(id, format!("Failed to decode frame: {e}")),
+    };
+
+    // Convert RGBA bytes to PNG using the image crate
+    let img: image::ImageBuffer<image::Rgba<u8>, Vec<u8>> =
+        match image::ImageBuffer::from_raw(frame.width, frame.height, frame.data.to_vec()) {
+            Some(img) => img,
+            None => return mcp_error(id, "Failed to create image buffer from frame data"),
+        };
+
+    let out = PathBuf::from(output_path);
+    if let Some(parent) = out.parent()
+        && !parent.as_os_str().is_empty()
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        return mcp_error(id, format!("Failed to create output directory: {e}"));
+    }
+
+    if let Err(e) = img.save(&out) {
+        return mcp_error(id, format!("Failed to save PNG: {e}"));
+    }
+
+    let result = json!({
+        "path": output_path,
+        "width": frame.width,
+        "height": frame.height,
+        "frame_number": frame_number,
+    });
+    mcp_success(
+        id,
+        serde_json::to_string_pretty(&result).unwrap_or_default(),
+    )
 }
 
 fn find_track_id(timeline: &Timeline, name_or_id: &str) -> Option<tazama_core::TrackId> {
@@ -840,7 +945,7 @@ mod tests {
         });
         let response = handle_request(&request, &mut state).await;
         let tools = response["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 6);
+        assert_eq!(tools.len(), 7);
     }
 
     #[tokio::test]
@@ -1021,6 +1126,136 @@ mod tests {
             let text = response["result"]["content"][0]["text"].as_str().unwrap();
             assert!(text.contains("Added marker"));
         }
+    }
+
+    #[tokio::test]
+    async fn extract_frame_missing_project() {
+        let state = ServerState::new();
+        let response = handle_extract_frame(
+            &json!(1),
+            &json!({
+                "clip_id": "00000000-0000-0000-0000-000000000000",
+                "frame_number": 0,
+                "output_path": "/tmp/frame.png"
+            }),
+            &state,
+        )
+        .await;
+        assert_eq!(response["result"]["isError"], true);
+        let text = response["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("No project loaded"));
+    }
+
+    #[tokio::test]
+    async fn extract_frame_tool_in_list() {
+        let mut state = ServerState::new();
+        let request = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/list",
+            "params": {}
+        });
+        let response = handle_request(&request, &mut state).await;
+        let tools = response["result"]["tools"].as_array().unwrap();
+        let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
+        assert!(names.contains(&"tazama_extract_frame"));
+    }
+
+    #[tokio::test]
+    async fn extract_frame_missing_clip_id() {
+        let mut state = ServerState::new();
+        handle_create_project(&json!(1), &json!({ "name": "Test" }), &mut state);
+
+        let response = handle_extract_frame(
+            &json!(2),
+            &json!({
+                "frame_number": 0,
+                "output_path": "/tmp/frame.png"
+            }),
+            &state,
+        )
+        .await;
+        assert_eq!(response["result"]["isError"], true);
+        let text = response["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("Missing"));
+    }
+
+    #[tokio::test]
+    async fn extract_frame_missing_frame_number() {
+        let mut state = ServerState::new();
+        handle_create_project(&json!(1), &json!({ "name": "Test" }), &mut state);
+
+        let response = handle_extract_frame(
+            &json!(2),
+            &json!({
+                "clip_id": "00000000-0000-0000-0000-000000000000",
+                "output_path": "/tmp/frame.png"
+            }),
+            &state,
+        )
+        .await;
+        assert_eq!(response["result"]["isError"], true);
+        let text = response["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("Missing"));
+    }
+
+    #[tokio::test]
+    async fn extract_frame_missing_output_path() {
+        let mut state = ServerState::new();
+        handle_create_project(&json!(1), &json!({ "name": "Test" }), &mut state);
+
+        let response = handle_extract_frame(
+            &json!(2),
+            &json!({
+                "clip_id": "00000000-0000-0000-0000-000000000000",
+                "frame_number": 0
+            }),
+            &state,
+        )
+        .await;
+        assert_eq!(response["result"]["isError"], true);
+        let text = response["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("Missing"));
+    }
+
+    #[tokio::test]
+    async fn extract_frame_invalid_clip_id() {
+        let mut state = ServerState::new();
+        handle_create_project(&json!(1), &json!({ "name": "Test" }), &mut state);
+
+        let response = handle_extract_frame(
+            &json!(2),
+            &json!({
+                "clip_id": "not-a-uuid",
+                "frame_number": 0,
+                "output_path": "/tmp/frame.png"
+            }),
+            &state,
+        )
+        .await;
+        assert_eq!(response["result"]["isError"], true);
+        let text = response["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("Invalid clip_id"));
+    }
+
+    #[tokio::test]
+    async fn extract_frame_clip_not_found() {
+        let mut state = ServerState::new();
+        handle_create_project(&json!(1), &json!({ "name": "Test" }), &mut state);
+
+        let response = handle_extract_frame(
+            &json!(2),
+            &json!({
+                "clip_id": "00000000-0000-0000-0000-000000000000",
+                "frame_number": 0,
+                "output_path": "/tmp/frame.png"
+            }),
+            &state,
+        )
+        .await;
+        assert_eq!(response["result"]["isError"], true);
+        let text = response["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("Clip not found"));
     }
 
     #[tokio::test]
