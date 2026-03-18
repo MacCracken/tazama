@@ -157,4 +157,57 @@ mod tests {
         let back: ExportConfig = serde_json::from_str(&json).unwrap();
         assert!(back.hardware_accel);
     }
+
+    #[test]
+    fn fraction_exceeds_total() {
+        // frames_written > total_frames should produce fraction > 1.0
+        let p = ExportProgress {
+            frames_written: 150,
+            total_frames: 100,
+            done: false,
+        };
+        assert!(
+            p.fraction() > 1.0,
+            "fraction should exceed 1.0 when frames > total"
+        );
+        assert!((p.fraction() - 1.5).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn export_config_serde_all_formats() {
+        for format in [
+            ExportFormat::Mp4,
+            ExportFormat::WebM,
+            ExportFormat::ProRes,
+            ExportFormat::DnxHr,
+            ExportFormat::Mkv,
+            ExportFormat::Gif,
+        ] {
+            let config = ExportConfig {
+                output_path: "/tmp/test.out".into(),
+                format,
+                width: 1280,
+                height: 720,
+                frame_rate: (24, 1),
+                sample_rate: 44100,
+                channels: 2,
+                hardware_accel: false,
+            };
+            let json = serde_json::to_string(&config).unwrap();
+            let back: ExportConfig = serde_json::from_str(&json).unwrap();
+            assert_eq!(back.format, format);
+            assert_eq!(back.width, 1280);
+            assert_eq!(back.height, 720);
+        }
+    }
+
+    #[test]
+    fn export_format_debug() {
+        assert_eq!(format!("{:?}", ExportFormat::Mp4), "Mp4");
+        assert_eq!(format!("{:?}", ExportFormat::WebM), "WebM");
+        assert_eq!(format!("{:?}", ExportFormat::ProRes), "ProRes");
+        assert_eq!(format!("{:?}", ExportFormat::DnxHr), "DnxHr");
+        assert_eq!(format!("{:?}", ExportFormat::Mkv), "Mkv");
+        assert_eq!(format!("{:?}", ExportFormat::Gif), "Gif");
+    }
 }

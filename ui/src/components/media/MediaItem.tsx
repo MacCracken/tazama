@@ -46,6 +46,7 @@ export function MediaItem({ asset }: MediaItemProps) {
         sample_rate: null,
         channels: null,
         info: null,
+        proxy_path: null,
       },
       timeline_start: 0,
       duration: asset.duration_frames,

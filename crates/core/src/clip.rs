@@ -277,6 +277,72 @@ mod tests {
     }
 
     #[test]
+    fn media_ref_with_proxy_path() {
+        let mr = MediaRef {
+            path: "original.mp4".into(),
+            duration_frames: 300,
+            width: Some(3840),
+            height: Some(2160),
+            sample_rate: None,
+            channels: None,
+            info: None,
+            proxy_path: Some("proxy.mp4".into()),
+        };
+        assert_eq!(mr.proxy_path.as_deref(), Some("proxy.mp4"));
+    }
+
+    #[test]
+    fn media_ref_serde_round_trip_with_proxy() {
+        let mr = MediaRef {
+            path: "original.mp4".into(),
+            duration_frames: 300,
+            width: Some(1920),
+            height: Some(1080),
+            sample_rate: Some(48000),
+            channels: Some(2),
+            info: None,
+            proxy_path: Some("proxy.mp4".into()),
+        };
+        let json = serde_json::to_string(&mr).unwrap();
+        let back: MediaRef = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.path, "original.mp4");
+        assert_eq!(back.proxy_path.as_deref(), Some("proxy.mp4"));
+        assert_eq!(back.duration_frames, 300);
+    }
+
+    #[test]
+    fn clip_serde_round_trip_preserves_all_fields() {
+        let mr = MediaRef {
+            path: "video.mov".into(),
+            duration_frames: 1000,
+            width: Some(1920),
+            height: Some(1080),
+            sample_rate: None,
+            channels: None,
+            info: None,
+            proxy_path: None,
+        };
+        let mut clip = Clip::new("my_clip", ClipKind::Video, 50, 200);
+        clip.media = Some(mr);
+        clip.source_offset = 10;
+        clip.opacity = 0.7;
+        clip.volume = 0.9;
+
+        let json = serde_json::to_string(&clip).unwrap();
+        let back: Clip = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.id, clip.id);
+        assert_eq!(back.name, "my_clip");
+        assert_eq!(back.kind, ClipKind::Video);
+        assert_eq!(back.timeline_start, 50);
+        assert_eq!(back.duration, 200);
+        assert_eq!(back.source_offset, 10);
+        assert!((back.opacity - 0.7).abs() < 1e-6);
+        assert!((back.volume - 0.9).abs() < 1e-6);
+        assert!(back.media.is_some());
+        assert_eq!(back.media.unwrap().path, "video.mov");
+    }
+
+    #[test]
     fn clip_id_default() {
         let id1 = ClipId::default();
         let id2 = ClipId::default();

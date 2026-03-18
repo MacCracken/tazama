@@ -145,6 +145,41 @@ mod tests {
     }
 
     #[test]
+    fn rasterize_very_long_string() {
+        let long_text = "A".repeat(500);
+        let (data, w, h) = rasterize_text(
+            &long_text,
+            "sans-serif",
+            24.0,
+            [1.0, 1.0, 1.0, 1.0],
+            256,
+            128,
+        );
+        assert_eq!(w, 256);
+        assert_eq!(h, 128);
+        assert_eq!(data.len(), 256 * 128 * 4);
+    }
+
+    #[test]
+    fn rasterize_large_font_size() {
+        let (data, w, h) = rasterize_text("X", "sans-serif", 200.0, [1.0, 1.0, 1.0, 1.0], 512, 256);
+        assert_eq!(w, 512);
+        assert_eq!(h, 256);
+        assert_eq!(data.len(), 512 * 256 * 4);
+        let has_content = data.iter().any(|&b| b != 0);
+        assert!(has_content, "large font should produce visible pixels");
+    }
+
+    #[test]
+    fn rasterize_zero_dimensions() {
+        // Zero-size canvas should produce empty pixel buffer without panic
+        let (data, w, h) = rasterize_text("Hello", "sans-serif", 24.0, [1.0, 1.0, 1.0, 1.0], 0, 0);
+        assert_eq!(w, 0);
+        assert_eq!(h, 0);
+        assert!(data.is_empty());
+    }
+
+    #[test]
     fn rasterize_with_alpha() {
         let (data, _, _) =
             rasterize_text("Semi", "sans-serif", 32.0, [1.0, 1.0, 1.0, 0.5], 128, 48);

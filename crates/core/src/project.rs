@@ -143,6 +143,38 @@ mod tests {
     }
 
     #[test]
+    fn project_new_sets_created_and_modified_at() {
+        let before = Utc::now();
+        let p = Project::new("timestamps", ProjectSettings::default());
+        let after = Utc::now();
+        assert!(p.created_at >= before && p.created_at <= after);
+        assert!(p.modified_at >= before && p.modified_at <= after);
+        assert_eq!(p.created_at, p.modified_at);
+    }
+
+    #[test]
+    fn project_settings_default_values() {
+        let s = ProjectSettings::default();
+        assert_eq!(s.width, 1920);
+        assert_eq!(s.height, 1080);
+        assert!((s.frame_rate.fps() - 30.0).abs() < f64::EPSILON);
+        assert_eq!(s.sample_rate, 48000);
+        assert_eq!(s.channels, 2);
+    }
+
+    #[test]
+    fn frame_rate_fps_23_976() {
+        let fr = FrameRate::new(24000, 1001);
+        assert!((fr.fps() - 23.976).abs() < 0.001);
+    }
+
+    #[test]
+    fn frame_rate_fps_60() {
+        let fr = FrameRate::new(60, 1);
+        assert!((fr.fps() - 60.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
     fn project_serde_round_trip() {
         let p = Project::new("serde test", ProjectSettings::default());
         let json = serde_json::to_string(&p).unwrap();

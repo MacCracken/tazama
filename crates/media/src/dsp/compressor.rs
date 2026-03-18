@@ -251,4 +251,99 @@ mod tests {
         // Should still compress with zero attack
         assert!(compressed_energy < original_energy * 0.8);
     }
+
+    #[test]
+    fn very_quiet_near_silence() {
+        // Signal at ~-80 dB (0.0001 linear), well below any reasonable threshold
+        let amplitude = 0.0001f32;
+        let mut samples: Vec<f32> = (0..2048)
+            .map(|i| {
+                let v = (2.0 * std::f64::consts::PI * 440.0 * i as f64 / 96000.0).sin() as f32;
+                v * amplitude
+            })
+            .collect();
+        let original = samples.clone();
+        apply_compressor(&mut samples, 48000, 1, -20.0, 4.0, 10.0, 100.0);
+
+        // Energy ratio should be very close to 1.0 (no compression applied)
+        let orig_energy: f64 = original.iter().map(|s| (*s as f64).powi(2)).sum();
+        let comp_energy: f64 = samples.iter().map(|s| (*s as f64).powi(2)).sum();
+        let ratio = comp_energy / orig_energy;
+        assert!(
+            ratio > 0.99,
+            "near-silence should be unaffected, ratio={ratio}"
+        );
+    }
+
+    #[test]
+    fn alternating_loud_quiet() {
+        // Alternating loud and quiet samples to exercise attack/release
+        let mut samples: Vec<f32> = (0..4096)
+            .map(|i| {
+                if (i / 256) % 2 == 0 {
+                    0.9 // loud
+                } else {
+                    0.01 // quiet
+                }
+            })
+            .collect();
+        let original_energy: f64 = samples.iter().map(|s| (*s as f64).powi(2)).sum();
+        apply_compressor(&mut samples, 48000, 1, -20.0, 4.0, 5.0, 50.0);
+        let compressed_energy: f64 = samples.iter().map(|s| (*s as f64).powi(2)).sum();
+
+        // Overall energy should be reduced due to loud portions being compressed
+        assert!(
+            compressed_energy < original_energy,
+            "alternating signal should have reduced energy"
+        );
+    }
+
+    #[test]
+    fn negative_threshold() {
+        // Negative threshold (e.g. -40 dB) is valid and means compression starts
+        // at a very low level
+        let amplitude = 0.1f32; // about -20 dB, above -40 dB threshold
+        let mut samples: Vec<f32> = (0..4096)
+            .map(|i| {
+                let v = (2.0 * std::f64::consts::PI * 440.0 * i as f64 / 96000.0).sin() as f32;
+                v * amplitude
+            })
+            .collect();
+        let original_energy: f64 = samples.iter().map(|s| (*s as f64).powi(2)).sum();
+        apply_compressor(&mut samples, 48000, 1, -40.0, 4.0, 5.0, 50.0);
+        let compressed_energy: f64 = samples.iter().map(|s| (*s as f64).powi(2)).sum();
+
+        // With such a low threshold, even moderate signals get compressed
+        assert!(
+            compressed_energy < original_energy * 0.95,
+            "negative threshold should compress moderate signal"
+        );
+    }
+
+    #[test]
+    fn ratio_one_exact_noop() {
+        // ratio=1.0 means 1:1 compression (no compression), triggers early return
+        let mut samples = vec![0.9f32; 1024];
+        let original = samples.clone();
+        apply_compressor(&mut samples, 48000, 1, -20.0, 1.0, 10.0, 100.0);
+        assert_eq!(samples, original, "ratio=1.0 should be exact passthrough");
+    }
+
+    #[test]
+    fn mono_channel_processing() {
+        let amplitude = 0.9f32;
+        let mut samples: Vec<f32> = (0..2048)
+            .map(|i| {
+                let v = (2.0 * std::f64::consts::PI * 440.0 * i as f64 / 96000.0).sin() as f32;
+                v * amplitude
+            })
+            .collect();
+        let original_energy: f64 = samples.iter().map(|s| (*s as f64).powi(2)).sum();
+        apply_compressor(&mut samples, 48000, 1, -20.0, 4.0, 1.0, 50.0);
+        let compressed_energy: f64 = samples.iter().map(|s| (*s as f64).powi(2)).sum();
+        assert!(
+            compressed_energy < original_energy * 0.8,
+            "mono loud signal should be compressed"
+        );
+    }
 }

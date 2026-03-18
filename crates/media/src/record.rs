@@ -285,4 +285,72 @@ mod tests {
         let result = stop();
         assert!(result.is_err());
     }
+
+    #[test]
+    fn wav_header_magic_bytes() {
+        let samples = vec![0.0f32; 100];
+        let path = std::env::temp_dir().join("tazama_test_wav_magic.wav");
+        write_wav(&path, &samples, 44100, 1).unwrap();
+
+        let data = std::fs::read(&path).unwrap();
+
+        // RIFF magic
+        assert_eq!(&data[0..4], b"RIFF");
+        // WAVE format
+        assert_eq!(&data[8..12], b"WAVE");
+        // fmt chunk id
+        assert_eq!(&data[12..16], b"fmt ");
+        // PCM format tag = 1
+        let format_tag = u16::from_le_bytes([data[20], data[21]]);
+        assert_eq!(format_tag, 1, "format should be PCM (1)");
+        // data chunk id
+        assert_eq!(&data[36..40], b"data");
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn wav_header_format_fields() {
+        let samples = vec![0.5f32; 200];
+        let path = std::env::temp_dir().join("tazama_test_wav_fields.wav");
+        write_wav(&path, &samples, 22050, 2).unwrap();
+
+        let data = std::fs::read(&path).unwrap();
+
+        // Channels
+        let ch = u16::from_le_bytes([data[22], data[23]]);
+        assert_eq!(ch, 2);
+
+        // Sample rate
+        let sr = u32::from_le_bytes([data[24], data[25], data[26], data[27]]);
+        assert_eq!(sr, 22050);
+
+        // Byte rate = sample_rate * channels * bytes_per_sample
+        let byte_rate = u32::from_le_bytes([data[28], data[29], data[30], data[31]]);
+        assert_eq!(byte_rate, 22050 * 2 * 2); // 22050 Hz * 2 ch * 2 bytes
+
+        // Block align = channels * bytes_per_sample
+        let block_align = u16::from_le_bytes([data[32], data[33]]);
+        assert_eq!(block_align, 4); // 2 ch * 2 bytes
+
+        // Bits per sample
+        let bps = u16::from_le_bytes([data[34], data[35]]);
+        assert_eq!(bps, 16);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn stop_without_start_returns_error_message() {
+        if let Ok(mut state) = recorder().lock() {
+            *state = RecorderState::Idle;
+        }
+        let result = stop();
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(
+            err_msg.contains("no recording"),
+            "error should mention no recording in progress: {err_msg}"
+        );
+    }
 }

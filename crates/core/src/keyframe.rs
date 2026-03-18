@@ -401,6 +401,93 @@ mod tests {
     }
 
     #[test]
+    fn evaluate_multi_segment_linear_three_segments() {
+        // 4 keyframes = 3 segments
+        let track = linear_track(vec![(0, 0.0), (10, 10.0), (20, 5.0), (30, 15.0)]);
+        // Segment 1: 0→10, value 0→10
+        let v = evaluate(&track, 5).unwrap();
+        assert!((v - 5.0).abs() < 1e-6);
+        // Segment 2: 10→20, value 10→5
+        let v = evaluate(&track, 15).unwrap();
+        assert!((v - 7.5).abs() < 1e-6);
+        // Segment 3: 20→30, value 5→15
+        let v = evaluate(&track, 25).unwrap();
+        assert!((v - 10.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn evaluate_just_before_and_after_keyframes() {
+        let track = linear_track(vec![(10, 0.0), (20, 10.0), (30, 20.0)]);
+        // Just before second keyframe
+        let v = evaluate(&track, 19).unwrap();
+        assert!((v - 9.0).abs() < 1e-6);
+        // At second keyframe
+        assert_eq!(evaluate(&track, 20), Some(10.0));
+        // Just after second keyframe
+        let v = evaluate(&track, 21).unwrap();
+        assert!((v - 11.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn integrated_speed_varying_ramp_1_to_3() {
+        let track = linear_track(vec![(0, 1.0), (10, 3.0)]);
+        // Linear ramp 1→3 over 10 frames, average = 2.0, total = 20.0
+        let result = integrated_speed(&track, 0, 10);
+        assert!((result - 20.0).abs() < 0.5);
+    }
+
+    #[test]
+    fn integrated_speed_with_hold_interpolation() {
+        let mut track = KeyframeTrack::new("speed");
+        track.add_keyframe(Keyframe::new(0, 2.0, Interpolation::Hold));
+        track.add_keyframe(Keyframe::new(10, 5.0, Interpolation::Hold));
+        // With hold, speed stays at 2.0 from frame 0..9, then jumps to 5.0 at frame 10
+        let result = integrated_speed(&track, 0, 10);
+        // Each frame evaluates to 2.0 (hold), trapezoidal: (2+2)/2 * 9 + (2+5)/2 * 1 = 18 + 3.5 = 21.5
+        // Actually frame 9→10: v0=eval(9)=2.0 (hold), v1=eval(10)=5.0, trap = (2+5)/2 = 3.5
+        // frames 0..9: all 2.0, trap = 2.0 each = 9 * 2.0 = 18
+        assert!((result - 21.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn add_keyframe_duplicate_frames_maintains_both() {
+        let mut track = KeyframeTrack::new("test");
+        track.add_keyframe(Keyframe::new(5, 1.0, Interpolation::Linear));
+        track.add_keyframe(Keyframe::new(5, 2.0, Interpolation::Linear));
+        track.add_keyframe(Keyframe::new(5, 3.0, Interpolation::Linear));
+        assert_eq!(track.keyframes.len(), 3);
+        // All at same frame
+        assert!(track.keyframes.iter().all(|k| k.frame == 5));
+    }
+
+    #[test]
+    fn interpolation_serde_round_trip_all_variants() {
+        let variants = vec![
+            Interpolation::Linear,
+            Interpolation::Hold,
+            Interpolation::BezierCubic {
+                in_tangent: (0.25, 0.1),
+                out_tangent: (0.75, 0.9),
+            },
+        ];
+        for interp in variants {
+            let json = serde_json::to_string(&interp).unwrap();
+            let back: Interpolation = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, interp);
+        }
+    }
+
+    #[test]
+    fn keyframe_id_uniqueness_and_default() {
+        let id1 = KeyframeId::new();
+        let id2 = KeyframeId::new();
+        let id3 = KeyframeId::default();
+        assert_ne!(id1, id2);
+        assert_ne!(id1, id3);
+        assert_ne!(id2, id3);
+    }
+
+    #[test]
     fn bezier_cubic_zero_tangents_behaves_like_linear() {
         let mut track = KeyframeTrack::new("test");
         track.add_keyframe(Keyframe::new(

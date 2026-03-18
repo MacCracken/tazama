@@ -232,4 +232,61 @@ mod tests {
         // Clean up proxy dir if created
         let _ = tokio::fs::remove_dir(proxy_dir).await;
     }
+
+    #[test]
+    fn proxy_path_with_spaces() {
+        let source = Path::new("/videos/my video clip.mp4");
+        let proxy_dir = Path::new("/tmp/proxy dir");
+        let target_width = 640u32;
+
+        let stem = source
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| "proxy".to_string());
+        let proxy_path = proxy_dir.join(format!("{stem}_proxy_{target_width}.mp4"));
+
+        assert_eq!(
+            proxy_path,
+            PathBuf::from("/tmp/proxy dir/my video clip_proxy_640.mp4")
+        );
+    }
+
+    #[test]
+    fn proxy_path_with_unicode() {
+        let source = Path::new("/videos/\u{00e9}dition_vid\u{00e9}o.mp4");
+        let proxy_dir = Path::new("/tmp/proxies");
+        let target_width = 720u32;
+
+        let stem = source
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| "proxy".to_string());
+        let proxy_path = proxy_dir.join(format!("{stem}_proxy_{target_width}.mp4"));
+
+        assert_eq!(
+            proxy_path,
+            PathBuf::from("/tmp/proxies/\u{00e9}dition_vid\u{00e9}o_proxy_720.mp4")
+        );
+    }
+
+    #[test]
+    fn proxy_path_preserves_directory_structure() {
+        // The proxy should be placed in proxy_dir, not in the source's directory
+        let source = Path::new("/deep/nested/path/to/video.mp4");
+        let proxy_dir = Path::new("/tmp/proxies");
+        let target_width = 480u32;
+
+        let stem = source
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| "proxy".to_string());
+        let proxy_path = proxy_dir.join(format!("{stem}_proxy_{target_width}.mp4"));
+
+        // Proxy goes in proxy_dir, not in source's parent
+        assert_eq!(proxy_path.parent().unwrap(), Path::new("/tmp/proxies"));
+        assert_eq!(
+            proxy_path,
+            PathBuf::from("/tmp/proxies/video_proxy_480.mp4")
+        );
+    }
 }

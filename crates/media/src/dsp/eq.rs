@@ -302,4 +302,85 @@ mod tests {
         apply_eq(&mut samples, 0, 2, 6.0, 3.0, -3.0);
         assert_eq!(samples, original);
     }
+
+    #[test]
+    fn high_shelf_boost_10khz_tone() {
+        // A 10kHz tone should be boosted by a high shelf at 5kHz
+        let sample_rate = 48000u32;
+        let freq = 10000.0;
+        let num_frames = 4096;
+        let mut samples: Vec<f32> = (0..num_frames)
+            .map(|i| {
+                (2.0 * std::f64::consts::PI * freq * i as f64 / sample_rate as f64).sin() as f32
+                    * 0.5
+            })
+            .collect();
+
+        let original_energy: f64 = samples.iter().map(|s| (*s as f64).powi(2)).sum();
+        apply_eq(&mut samples, sample_rate, 1, 0.0, 0.0, 12.0);
+        let boosted_energy: f64 = samples.iter().map(|s| (*s as f64).powi(2)).sum();
+
+        assert!(
+            boosted_energy > original_energy * 1.5,
+            "high shelf should boost 10kHz: orig={original_energy}, boosted={boosted_energy}"
+        );
+    }
+
+    #[test]
+    fn negative_gain_cuts_frequency() {
+        // Negative gain on low shelf should reduce 100Hz energy
+        let sample_rate = 48000u32;
+        let freq = 100.0;
+        let num_frames = 4096;
+        let mut samples: Vec<f32> = (0..num_frames)
+            .map(|i| {
+                (2.0 * std::f64::consts::PI * freq * i as f64 / sample_rate as f64).sin() as f32
+                    * 0.5
+            })
+            .collect();
+
+        let original_energy: f64 = samples.iter().map(|s| (*s as f64).powi(2)).sum();
+        apply_eq(&mut samples, sample_rate, 1, -12.0, 0.0, 0.0);
+        let cut_energy: f64 = samples.iter().map(|s| (*s as f64).powi(2)).sum();
+
+        assert!(
+            cut_energy < original_energy * 0.7,
+            "negative gain should cut: orig={original_energy}, cut={cut_energy}"
+        );
+    }
+
+    #[test]
+    fn very_short_input_one_sample() {
+        // Single sample should not panic
+        let mut samples = vec![0.5f32];
+        apply_eq(&mut samples, 48000, 1, 6.0, 3.0, -3.0);
+        // Just verify no panic and output is finite
+        assert!(samples[0].is_finite());
+    }
+
+    #[test]
+    fn all_bands_boosted_simultaneously() {
+        // Boost all three bands at once on a broadband signal
+        let sample_rate = 48000u32;
+        let num_frames = 4096;
+        // Mix of low, mid, and high frequencies
+        let mut samples: Vec<f32> = (0..num_frames)
+            .map(|i| {
+                let t = i as f64 / sample_rate as f64;
+                let low = (2.0 * std::f64::consts::PI * 100.0 * t).sin();
+                let mid = (2.0 * std::f64::consts::PI * 1000.0 * t).sin();
+                let high = (2.0 * std::f64::consts::PI * 10000.0 * t).sin();
+                ((low + mid + high) / 3.0 * 0.3) as f32
+            })
+            .collect();
+
+        let original_energy: f64 = samples.iter().map(|s| (*s as f64).powi(2)).sum();
+        apply_eq(&mut samples, sample_rate, 1, 6.0, 6.0, 6.0);
+        let boosted_energy: f64 = samples.iter().map(|s| (*s as f64).powi(2)).sum();
+
+        assert!(
+            boosted_energy > original_energy * 1.3,
+            "all bands boosted should increase total energy"
+        );
+    }
 }

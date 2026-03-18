@@ -901,4 +901,181 @@ mod tests {
         let expected = 0.5 * expected_gain;
         assert!((samples[50] - expected).abs() < 1e-4);
     }
+
+    #[test]
+    fn test_mix_volume_zero_produces_silence() {
+        let clip = DecodedClip {
+            samples: vec![0.8, 0.8, 0.8, 0.8],
+            start_sample: 0,
+            volume: 0.0, // zero volume
+            pan_gains: (1.0, 1.0),
+        };
+
+        let mut mix = [0.0f32; 4];
+        for (i, m) in mix.iter_mut().enumerate() {
+            *m += clip.samples[i] * clip.volume;
+        }
+
+        for s in &mix {
+            assert!(s.abs() < 1e-10, "volume=0 should produce silence");
+        }
+    }
+
+    #[test]
+    fn test_pan_full_left_zeroes_right() {
+        let clip = DecodedClip {
+            samples: vec![1.0, 1.0, 1.0, 1.0],
+            start_sample: 0,
+            volume: 1.0,
+            pan_gains: equal_power_pan(-1.0),
+        };
+
+        let ch = 2usize;
+        let mut mix = [0.0f32; 4];
+        let (lg, rg) = clip.pan_gains;
+        for (i, m) in mix.iter_mut().enumerate() {
+            let pan_gain = if i % ch == 0 { lg } else { rg };
+            *m += clip.samples[i] * clip.volume * pan_gain;
+        }
+
+        // Right channels (index 1, 3) should be ~0
+        assert!(
+            mix[1].abs() < 1e-6,
+            "full left pan: R should be ~0, got {}",
+            mix[1]
+        );
+        assert!(mix[3].abs() < 1e-6);
+        // Left channels should be ~1
+        assert!((mix[0] - 1.0).abs() < 1e-6, "full left pan: L should be ~1");
+    }
+
+    #[test]
+    fn test_pan_full_right_zeroes_left() {
+        let clip = DecodedClip {
+            samples: vec![1.0, 1.0, 1.0, 1.0],
+            start_sample: 0,
+            volume: 1.0,
+            pan_gains: equal_power_pan(1.0),
+        };
+
+        let ch = 2usize;
+        let mut mix = [0.0f32; 4];
+        let (lg, rg) = clip.pan_gains;
+        for (i, m) in mix.iter_mut().enumerate() {
+            let pan_gain = if i % ch == 0 { lg } else { rg };
+            *m += clip.samples[i] * clip.volume * pan_gain;
+        }
+
+        // Left channels (index 0, 2) should be ~0
+        assert!(
+            mix[0].abs() < 1e-6,
+            "full right pan: L should be ~0, got {}",
+            mix[0]
+        );
+        assert!(mix[2].abs() < 1e-6);
+        // Right channels should be ~1
+        assert!(
+            (mix[1] - 1.0).abs() < 1e-6,
+            "full right pan: R should be ~1"
+        );
+    }
+
+    #[test]
+    fn test_fade_in_on_decoded_samples() {
+        // Verify fade-in ramps from 0 to full over the specified duration
+        let mut samples = vec![1.0f32; 4800]; // 100ms at 48kHz mono
+        // 3 frames at 30fps = 100ms = 4800 samples
+        apply_fade_in(&mut samples, 48000, 1, 3, 30.0);
+
+        // First sample must be 0
+        assert!(samples[0].abs() < 1e-6, "fade-in first sample should be 0");
+        // Midpoint should be ~0.5
+        assert!(
+            (samples[2400] - 0.5).abs() < 0.02,
+            "fade-in midpoint should be ~0.5, got {}",
+            samples[2400]
+        );
+        // Sample after fade should be unmodified (1.0)
+        // All 4800 samples are within the fade, so last sample is near 1.0
+    }
+
+    #[test]
+    fn test_fade_out_on_decoded_samples() {
+        let mut samples = vec![1.0f32; 4800]; // 100ms at 48kHz mono
+        apply_fade_out(&mut samples, 48000, 1, 3, 3, 30.0);
+
+        // Last sample should be ~0
+        assert!(
+            samples[4799].abs() < 0.01,
+            "fade-out last sample should be ~0, got {}",
+            samples[4799]
+        );
+        // First sample should be ~1.0
+        assert!(
+            (samples[0] - 1.0).abs() < 0.01,
+            "fade-out first sample should be ~1.0"
+        );
+    }
+
+    #[test]
+    fn test_image_clips_skipped_in_audio() {
+        let mut timeline = tazama_core::Timeline::new();
+        timeline.add_track(tazama_core::Track::new("A1", TrackKind::Audio));
+
+        // Add an image clip to an audio track — should be skipped
+        let clip = tazama_core::Clip::new("photo", ClipKind::Image, 0, 30);
+        let _ = timeline.tracks[0].add_clip(clip);
+
+        let frame_rate = tazama_core::FrameRate::new(30, 1);
+        let (tx, mut rx) = tokio::sync::mpsc::channel(16);
+
+        mix_timeline_audio(&timeline, &frame_rate, 48000, 2, tx).unwrap();
+        assert!(
+            rx.try_recv().is_err(),
+            "image clips should produce no audio"
+        );
+    }
+
+    #[test]
+    fn test_partial_overlap_second_chunk() {
+        // Clip starts at sample 2, so in a chunk of size 4 starting at 0,
+        // only samples 2..4 should contain the clip's data
+        let clip = DecodedClip {
+            samples: vec![0.7; 4],
+            start_sample: 2,
+            volume: 1.0,
+            pan_gains: (1.0, 1.0),
+        };
+
+        let chunk_size = 4;
+        let mut mix = vec![0.0f32; chunk_size];
+        let offset: u64 = 0;
+
+        let clip_end = clip.start_sample + clip.samples.len() as u64;
+        if !(offset >= clip_end || offset + chunk_size as u64 <= clip.start_sample) {
+            let chunk_start_in_clip = if offset > clip.start_sample {
+                (offset - clip.start_sample) as usize
+            } else {
+                0
+            };
+            let mix_start = if clip.start_sample > offset {
+                (clip.start_sample - offset) as usize
+            } else {
+                0
+            };
+            let available_from_clip = clip.samples.len() - chunk_start_in_clip;
+            let available_in_mix = chunk_size - mix_start;
+            let copy_len = available_from_clip.min(available_in_mix);
+            for i in 0..copy_len {
+                mix[mix_start + i] += clip.samples[chunk_start_in_clip + i] * clip.volume;
+            }
+        }
+
+        // Samples 0..2 should be 0 (no clip data)
+        assert_eq!(mix[0], 0.0);
+        assert_eq!(mix[1], 0.0);
+        // Samples 2..4 should have the clip data (0.7)
+        assert!((mix[2] - 0.7).abs() < 1e-6);
+        assert!((mix[3] - 0.7).abs() < 1e-6);
+    }
 }

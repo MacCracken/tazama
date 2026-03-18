@@ -23,6 +23,7 @@ export function EffectList({ clip, trackId }: EffectListProps) {
         },
       },
       enabled: true,
+      keyframe_tracks: [],
     };
     addEffect(trackId, clip.id, effect);
   };

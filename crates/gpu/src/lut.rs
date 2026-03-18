@@ -371,6 +371,94 @@ LUT_3D_SIZE 2
     }
 
     #[test]
+    fn parse_cube_size2_minimum_valid() {
+        let content = "\
+LUT_3D_SIZE 2
+0.0 0.0 0.0
+1.0 0.0 0.0
+0.0 1.0 0.0
+1.0 1.0 0.0
+0.0 0.0 1.0
+1.0 0.0 1.0
+0.0 1.0 1.0
+1.0 1.0 1.0
+";
+        let lut = parse_cube(content).unwrap();
+        assert_eq!(lut.size, 2);
+        assert_eq!(lut.data.len(), 8);
+    }
+
+    #[test]
+    fn parse_cube_extra_whitespace_in_data() {
+        let content = "\
+LUT_3D_SIZE 2
+  0.0   0.0   0.0
+1.0  0.0  0.0
+ 0.0 1.0 0.0
+1.0 1.0 0.0
+0.0 0.0 1.0
+  1.0   0.0   1.0
+0.0   1.0   1.0
+1.0 1.0 1.0
+";
+        let lut = parse_cube(content).unwrap();
+        assert_eq!(lut.size, 2);
+        assert_eq!(lut.data.len(), 8);
+        assert_eq!(lut.data[0], [0.0, 0.0, 0.0]);
+        assert_eq!(lut.data[1], [1.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn parse_cube_with_domain_min_max() {
+        let content = "\
+LUT_3D_SIZE 2
+DOMAIN_MIN 0.0 0.0 0.0
+DOMAIN_MAX 1.0 1.0 1.0
+0.1 0.2 0.3
+0.4 0.5 0.6
+0.7 0.8 0.9
+0.15 0.25 0.35
+0.45 0.55 0.65
+0.75 0.85 0.95
+0.11 0.22 0.33
+0.44 0.55 0.66
+";
+        let lut = parse_cube(content).unwrap();
+        assert_eq!(lut.size, 2);
+        assert_eq!(lut.data.len(), 8);
+        // DOMAIN_MIN/MAX are ignored, data is parsed normally
+        assert_eq!(lut.data[0], [0.1, 0.2, 0.3]);
+    }
+
+    #[test]
+    fn lut3d_index_pattern_r_g_size_b_size_size() {
+        // For a size=2 identity LUT, data order is r fastest, then g, then b
+        // index = r + g*size + b*size*size
+        let mut lines = String::from("LUT_3D_SIZE 2\n");
+        for b in 0..2u32 {
+            for g in 0..2u32 {
+                for r in 0..2u32 {
+                    let rv = r as f32;
+                    let gv = g as f32;
+                    let bv = b as f32;
+                    lines.push_str(&format!("{rv} {gv} {bv}\n"));
+                }
+            }
+        }
+        let lut = parse_cube(&lines).unwrap();
+        let size = lut.size as usize;
+        // Verify index = r + g*size + b*size*size
+        for b in 0..2usize {
+            for g in 0..2usize {
+                for r in 0..2usize {
+                    let idx = r + g * size + b * size * size;
+                    assert_eq!(lut.data[idx], [r as f32, g as f32, b as f32]);
+                }
+            }
+        }
+    }
+
+    #[test]
     fn parse_size_boundary_valid() {
         // Size 2 is the minimum valid size
         let mut content = String::from("LUT_3D_SIZE 2\n");

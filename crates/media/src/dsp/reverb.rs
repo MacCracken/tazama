@@ -251,4 +251,80 @@ mod tests {
         let mut samples: Vec<f32> = Vec::new();
         apply_reverb(&mut samples, 48000, 2, 0.5, 0.5, 0.5);
     }
+
+    #[test]
+    fn short_input_fewer_than_delay_line() {
+        // Input shorter than the smallest comb delay (~1422 samples at 44100)
+        // Should not panic and should produce output
+        let mut samples = vec![0.0f32; 100];
+        samples[0] = 1.0;
+        apply_reverb(&mut samples, 44100, 1, 0.5, 0.5, 0.5);
+        // No panic is the main assertion; samples may or may not change
+    }
+
+    #[test]
+    fn wet_zero_exact_passthrough() {
+        // wet=0.0 triggers early return, so samples must be bit-identical
+        let original: Vec<f32> = (0..4096)
+            .map(|i| (2.0 * std::f64::consts::PI * 440.0 * i as f64 / 48000.0).sin() as f32)
+            .collect();
+        let mut processed = original.clone();
+        apply_reverb(&mut processed, 48000, 2, 0.9, 0.9, 0.0);
+        for (o, p) in original.iter().zip(processed.iter()) {
+            assert_eq!(o.to_bits(), p.to_bits());
+        }
+    }
+
+    #[test]
+    fn wet_one_fully_wet() {
+        // With wet=1.0, dry=0.0 so the output is purely reverb (no dry pass-through)
+        let mut samples = vec![0.0f32; 48000];
+        samples[0] = 1.0;
+        let original = samples.clone();
+
+        apply_reverb(&mut samples, 48000, 1, 0.5, 0.5, 1.0);
+
+        // The first sample should differ from original since dry component is zero
+        // and reverb component replaces it
+        assert_ne!(
+            samples, original,
+            "fully wet reverb should differ from original"
+        );
+    }
+
+    #[test]
+    fn high_room_size_near_one() {
+        let mut samples = vec![0.0f32; 48000];
+        samples[0] = 1.0;
+        apply_reverb(&mut samples, 48000, 1, 0.99, 0.5, 1.0);
+
+        // Very high room size should produce a long, sustained tail
+        let late_energy: f64 = samples[40000..].iter().map(|s| (*s as f64).powi(2)).sum();
+        assert!(
+            late_energy > 1e-8,
+            "room_size near 1.0 should have audible late tail: {late_energy}"
+        );
+    }
+
+    #[test]
+    fn damping_one_maximum() {
+        // damping=1.0 should heavily damp high frequencies but not panic
+        let mut samples = vec![0.0f32; 48000];
+        samples[0] = 1.0;
+        apply_reverb(&mut samples, 48000, 1, 0.5, 1.0, 1.0);
+
+        // Should still produce some output (low frequencies pass through damping)
+        let energy: f64 = samples[1000..].iter().map(|s| (*s as f64).powi(2)).sum();
+        assert!(energy > 1e-10, "max damping should still produce a tail");
+    }
+
+    #[test]
+    fn mono_input_processing() {
+        let mut samples = vec![0.0f32; 8192];
+        samples[0] = 1.0;
+        apply_reverb(&mut samples, 44100, 1, 0.5, 0.5, 0.5);
+
+        let energy: f64 = samples[2000..].iter().map(|s| (*s as f64).powi(2)).sum();
+        assert!(energy > 1e-8, "mono reverb should produce a tail");
+    }
 }

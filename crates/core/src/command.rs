@@ -833,6 +833,102 @@ mod tests {
     }
 
     #[test]
+    fn set_track_volume_nonexistent_track_returns_error() {
+        let (mut timeline, _) = setup();
+        let fake_id = crate::timeline::TrackId::new();
+        let cmd = EditCommand::SetTrackVolume {
+            track_id: fake_id,
+            old_volume: 1.0,
+            new_volume: 0.5,
+        };
+        let result = cmd.apply(&mut timeline);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn set_track_pan_nonexistent_track_returns_error() {
+        let (mut timeline, _) = setup();
+        let fake_id = crate::timeline::TrackId::new();
+        let cmd = EditCommand::SetTrackPan {
+            track_id: fake_id,
+            old_pan: 0.0,
+            new_pan: -1.0,
+        };
+        let result = cmd.apply(&mut timeline);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn set_keyframes_nonexistent_clip_returns_error() {
+        let (mut timeline, _) = setup();
+        let track_id = timeline.tracks[0].id;
+        let fake_clip_id = crate::clip::ClipId::new();
+        let cmd = EditCommand::SetKeyframes {
+            track_id,
+            clip_id: fake_clip_id,
+            effect_index: 0,
+            old_tracks: vec![],
+            new_tracks: vec![],
+        };
+        let result = cmd.apply(&mut timeline);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn set_keyframes_out_of_bounds_effect_index_succeeds_silently() {
+        let (mut timeline, mut history) = setup();
+        let track_id = timeline.tracks[0].id;
+        let clip = Clip::new("clip1", ClipKind::Video, 0, 30);
+        let clip_id = clip.id;
+        history
+            .execute(EditCommand::AddClip { track_id, clip }, &mut timeline)
+            .unwrap();
+        // No effects on clip, but effect_index=99 — should succeed silently
+        let cmd = EditCommand::SetKeyframes {
+            track_id,
+            clip_id,
+            effect_index: 99,
+            old_tracks: vec![],
+            new_tracks: vec![crate::keyframe::KeyframeTrack::new("test")],
+        };
+        let result = cmd.apply(&mut timeline);
+        assert!(result.is_ok());
+        // Clip effects unchanged (still empty)
+        assert!(timeline.tracks[0].clips[0].effects.is_empty());
+    }
+
+    #[test]
+    fn switch_angle_apply_and_undo() {
+        let (mut timeline, _) = setup();
+        let track_id = timeline.tracks[0].id;
+        let old_clip = Clip::new("angle1", ClipKind::Video, 0, 30);
+        let old_clip_id = old_clip.id;
+        // Add old clip directly
+        timeline
+            .track_mut(track_id)
+            .unwrap()
+            .add_clip(old_clip.clone())
+            .unwrap();
+        assert_eq!(timeline.tracks[0].clips.len(), 1);
+
+        let new_clip = Clip::new("angle2", ClipKind::Video, 0, 30);
+        let new_clip_id = new_clip.id;
+        let cmd = EditCommand::SwitchAngle {
+            track_id,
+            old_clip: Some(Box::new(old_clip)),
+            new_clip: Box::new(new_clip),
+        };
+        cmd.apply(&mut timeline).unwrap();
+        assert_eq!(timeline.tracks[0].clips.len(), 1);
+        assert_eq!(timeline.tracks[0].clips[0].id, new_clip_id);
+
+        // Undo
+        cmd.undo(&mut timeline).unwrap();
+        assert_eq!(timeline.tracks[0].clips.len(), 1);
+        assert_eq!(timeline.tracks[0].clips[0].id, old_clip_id);
+    }
+
+    #[test]
     fn redo_stack_cleared_on_new_action() {
         let (mut timeline, mut history) = setup();
         let track_id = timeline.tracks[0].id;
@@ -951,9 +1047,7 @@ mod tests {
         };
         history.execute(cmd, &mut timeline).unwrap();
         assert_eq!(
-            timeline.tracks[0].clips[0].effects[0]
-                .keyframe_tracks
-                .len(),
+            timeline.tracks[0].clips[0].effects[0].keyframe_tracks.len(),
             1
         );
         assert_eq!(
@@ -965,9 +1059,7 @@ mod tests {
 
         history.undo(&mut timeline).unwrap();
         assert_eq!(
-            timeline.tracks[0].clips[0].effects[0]
-                .keyframe_tracks
-                .len(),
+            timeline.tracks[0].clips[0].effects[0].keyframe_tracks.len(),
             0
         );
     }

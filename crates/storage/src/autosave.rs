@@ -257,10 +257,7 @@ mod tests {
     fn autosave_path_double_extension() {
         let path = PathBuf::from("/tmp/project.backup.tazama");
         let result = autosave_path_for(&path);
-        assert_eq!(
-            result,
-            PathBuf::from("/tmp/project.backup.tazama.autosave")
-        );
+        assert_eq!(result, PathBuf::from("/tmp/project.backup.tazama.autosave"));
     }
 
     #[tokio::test]
@@ -284,6 +281,60 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn concurrent_mark_dirty_calls() {
+        let mgr = AutosaveManager::new(60);
+        // Multiple sequential mark_dirty calls should not panic or deadlock
+        for _ in 0..10 {
+            mgr.mark_dirty().await;
+        }
+        // After all calls, dirty flag should be true
+        assert!(*mgr.dirty.lock().await);
+    }
+
+    #[tokio::test]
+    async fn update_project_replaces_previous() {
+        let mgr = AutosaveManager::new(60);
+        let path = PathBuf::from("/tmp/test.tazama");
+
+        let project1 = Project::new("first", ProjectSettings::default());
+        mgr.update_project(project1, path.clone()).await;
+        {
+            let p = mgr.project.lock().await;
+            assert_eq!(p.as_ref().unwrap().name, "first");
+        }
+
+        let project2 = Project::new("second", ProjectSettings::default());
+        mgr.update_project(project2, path).await;
+        {
+            let p = mgr.project.lock().await;
+            assert_eq!(p.as_ref().unwrap().name, "second");
+        }
+    }
+
+    #[tokio::test]
+    async fn recover_returns_none_when_autosave_older_than_original() {
+        let dir = std::env::temp_dir().join("tazama-autosave-test-older");
+        let _ = tokio::fs::create_dir_all(&dir).await;
+        let path = dir.join("original.tazama");
+
+        let project = Project::new("older test", ProjectSettings::default());
+        let autosave = autosave_path_for(&path);
+
+        // Write autosave first
+        save_autosave(&project, &autosave).await.unwrap();
+        // Small delay then write original (so original is newer)
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let json = serde_json::to_string(&project).unwrap();
+        tokio::fs::write(&path, json).await.unwrap();
+
+        // Recover should return None since autosave is older
+        let result = recover(&path).await;
+        assert!(result.is_none());
+
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    #[tokio::test]
     async fn save_autosave_with_timeline_data() {
         let dir = std::env::temp_dir().join("tazama-autosave-test-timeline");
         let _ = tokio::fs::create_dir_all(&dir).await;
@@ -291,7 +342,8 @@ mod tests {
 
         let mut project = Project::new("timeline test", ProjectSettings::default());
         // Add a track to the timeline
-        let track = tazama_core::timeline::Track::new("V1", tazama_core::timeline::TrackKind::Video);
+        let track =
+            tazama_core::timeline::Track::new("V1", tazama_core::timeline::TrackKind::Video);
         project.timeline.add_track(track);
 
         save_autosave(&project, &autosave_file).await.unwrap();

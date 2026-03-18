@@ -236,7 +236,11 @@ mod tests {
         let back: Effect = serde_json::from_str(&json).unwrap();
         assert_eq!(back.id, effect.id);
         match back.kind {
-            EffectKind::Eq { low_gain_db, mid_gain_db, high_gain_db } => {
+            EffectKind::Eq {
+                low_gain_db,
+                mid_gain_db,
+                high_gain_db,
+            } => {
                 assert!((low_gain_db - 3.0).abs() < 1e-6);
                 assert!((mid_gain_db - (-1.5)).abs() < 1e-6);
                 assert!((high_gain_db - 6.0).abs() < 1e-6);
@@ -312,7 +316,12 @@ mod tests {
         let json = serde_json::to_string(&effect).unwrap();
         let back: Effect = serde_json::from_str(&json).unwrap();
         match back.kind {
-            EffectKind::Transform { scale_x, scale_y, translate_x, translate_y } => {
+            EffectKind::Transform {
+                scale_x,
+                scale_y,
+                translate_x,
+                translate_y,
+            } => {
                 assert!((scale_x - 2.0).abs() < 1e-6);
                 assert!((scale_y - 0.5).abs() < 1e-6);
                 assert!((translate_x - 100.0).abs() < 1e-6);
@@ -335,7 +344,14 @@ mod tests {
         let json = serde_json::to_string(&effect).unwrap();
         let back: Effect = serde_json::from_str(&json).unwrap();
         match back.kind {
-            EffectKind::Text { content, font_family, font_size, color, x, y } => {
+            EffectKind::Text {
+                content,
+                font_family,
+                font_size,
+                color,
+                x,
+                y,
+            } => {
                 assert_eq!(content, "Hello World");
                 assert_eq!(font_family, "Helvetica");
                 assert!((font_size - 36.0).abs() < 1e-6);
@@ -366,6 +382,67 @@ mod tests {
                 assert!((params["mix"] - 1.0).abs() < 1e-6);
             }
             _ => panic!("expected Plugin variant"),
+        }
+    }
+
+    #[test]
+    fn effect_with_keyframe_tracks_serde_round_trip() {
+        let mut effect = Effect::new(EffectKind::Speed { factor: 1.5 });
+        let mut track = crate::keyframe::KeyframeTrack::new("speed");
+        track.add_keyframe(crate::keyframe::Keyframe::new(
+            0,
+            1.0,
+            crate::keyframe::Interpolation::Linear,
+        ));
+        track.add_keyframe(crate::keyframe::Keyframe::new(
+            30,
+            2.0,
+            crate::keyframe::Interpolation::Hold,
+        ));
+        effect.keyframe_tracks.push(track);
+
+        let json = serde_json::to_string(&effect).unwrap();
+        let back: Effect = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.id, effect.id);
+        assert_eq!(back.keyframe_tracks.len(), 1);
+        assert_eq!(back.keyframe_tracks[0].keyframes.len(), 2);
+        assert_eq!(back.keyframe_tracks[0].parameter, "speed");
+    }
+
+    #[test]
+    fn effect_kind_plugin_empty_params() {
+        let effect = Effect::new(EffectKind::Plugin {
+            plugin_id: "empty-plugin".into(),
+            params: std::collections::HashMap::new(),
+        });
+        let json = serde_json::to_string(&effect).unwrap();
+        let back: Effect = serde_json::from_str(&json).unwrap();
+        match back.kind {
+            EffectKind::Plugin { plugin_id, params } => {
+                assert_eq!(plugin_id, "empty-plugin");
+                assert!(params.is_empty());
+            }
+            _ => panic!("expected Plugin variant"),
+        }
+    }
+
+    #[test]
+    fn effect_kind_text_empty_content() {
+        let effect = Effect::new(EffectKind::Text {
+            content: "".into(),
+            font_family: "Arial".into(),
+            font_size: 24.0,
+            color: [0.0, 0.0, 0.0, 1.0],
+            x: 0.0,
+            y: 0.0,
+        });
+        let json = serde_json::to_string(&effect).unwrap();
+        let back: Effect = serde_json::from_str(&json).unwrap();
+        match back.kind {
+            EffectKind::Text { content, .. } => {
+                assert_eq!(content, "");
+            }
+            _ => panic!("expected Text variant"),
         }
     }
 

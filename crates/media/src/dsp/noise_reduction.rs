@@ -241,4 +241,98 @@ mod tests {
         let mut samples = vec![0.01f32; 100];
         apply_noise_reduction(&mut samples, 1, 0.5);
     }
+
+    #[test]
+    fn all_zero_input() {
+        let mut samples = vec![0.0f32; 8192];
+        apply_noise_reduction(&mut samples, 1, 0.8);
+        for s in &samples {
+            assert!(s.abs() < 1e-10, "all-zero input should stay zero");
+        }
+    }
+
+    #[test]
+    fn pure_sine_mostly_preserved() {
+        // A strong pure sine wave should mostly pass through noise reduction
+        let mut samples: Vec<f32> = (0..8192)
+            .map(|i| (2.0 * std::f64::consts::PI * 1000.0 * i as f64 / 48000.0).sin() as f32 * 0.9)
+            .collect();
+        let original_energy: f64 = samples.iter().map(|s| (*s as f64).powi(2)).sum();
+        apply_noise_reduction(&mut samples, 1, 0.3);
+        let processed_energy: f64 = samples.iter().map(|s| (*s as f64).powi(2)).sum();
+
+        let ratio = processed_energy / original_energy;
+        assert!(
+            ratio > 0.4,
+            "pure sine should be mostly preserved, ratio={ratio}"
+        );
+    }
+
+    #[test]
+    fn strength_zero_exact_passthrough() {
+        // strength=0.0 triggers early return
+        let original: Vec<f32> = (0..4096)
+            .map(|i| (2.0 * std::f64::consts::PI * 440.0 * i as f64 / 48000.0).sin() as f32 * 0.5)
+            .collect();
+        let mut processed = original.clone();
+        apply_noise_reduction(&mut processed, 1, 0.0);
+        for (o, p) in original.iter().zip(processed.iter()) {
+            assert_eq!(
+                o.to_bits(),
+                p.to_bits(),
+                "strength=0 should be bit-identical"
+            );
+        }
+    }
+
+    #[test]
+    fn strength_one_maximum_reduction() {
+        // Maximum strength should aggressively reduce noise
+        let mut samples: Vec<f32> = (0..8192)
+            .map(|i| {
+                let noise = ((i as f64 * 17.0 + 3.7).sin() * 43758.5453).fract() as f32;
+                (noise * 2.0 - 1.0) * 0.01
+            })
+            .collect();
+        let original_energy: f64 = samples.iter().map(|s| (*s as f64).powi(2)).sum();
+        apply_noise_reduction(&mut samples, 1, 1.0);
+        let reduced_energy: f64 = samples.iter().map(|s| (*s as f64).powi(2)).sum();
+
+        assert!(
+            reduced_energy < original_energy,
+            "max strength should reduce noise energy"
+        );
+    }
+
+    #[test]
+    fn very_short_input_below_fft_window() {
+        // Input shorter than WINDOW_SIZE (2048) triggers the simple amplitude gate
+        let mut samples = vec![0.005f32; 500];
+        apply_noise_reduction(&mut samples, 1, 0.8);
+        // With strength=0.8, threshold=0.008; samples at 0.005 < 0.008 → zeroed
+        for s in &samples {
+            assert!(
+                s.abs() < 1e-10,
+                "short input below threshold should be zeroed"
+            );
+        }
+    }
+
+    #[test]
+    fn mono_channel_noise_reduction() {
+        let mut samples: Vec<f32> = (0..8192)
+            .map(|i| {
+                let noise = ((i as f64 * 7.3 + 1.1).sin() * 12345.6789).fract() as f32;
+                (noise * 2.0 - 1.0) * 0.005
+            })
+            .collect();
+        let original_energy: f64 = samples.iter().map(|s| (*s as f64).powi(2)).sum();
+        apply_noise_reduction(&mut samples, 1, 0.7);
+        let reduced_energy: f64 = samples.iter().map(|s| (*s as f64).powi(2)).sum();
+
+        assert!(
+            reduced_energy < original_energy,
+            "mono noise should be reduced"
+        );
+    }
 }

@@ -77,6 +77,35 @@ mod tests {
     }
 
     #[test]
+    fn marker_serde_all_colors_serialize_correctly() {
+        let colors = [
+            (MarkerColor::Red, "Red"),
+            (MarkerColor::Orange, "Orange"),
+            (MarkerColor::Yellow, "Yellow"),
+            (MarkerColor::Green, "Green"),
+            (MarkerColor::Blue, "Blue"),
+            (MarkerColor::Purple, "Purple"),
+            (MarkerColor::White, "White"),
+        ];
+        for (color, expected_str) in colors {
+            let json = serde_json::to_string(&color).unwrap();
+            assert!(
+                json.contains(expected_str),
+                "expected {expected_str} in {json}"
+            );
+        }
+    }
+
+    #[test]
+    fn marker_serde_preserves_frame_zero() {
+        let m = Marker::new("start", 0, MarkerColor::White);
+        let json = serde_json::to_string(&m).unwrap();
+        let back: Marker = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.frame, 0);
+        assert_eq!(back.name, "start");
+    }
+
+    #[test]
     fn all_marker_colors() {
         for color in [
             MarkerColor::Red,
