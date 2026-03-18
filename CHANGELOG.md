@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026.3.18-1
+
+### Post-v1 Non-AI Features
+- Keyframe animation engine with linear, hold, and bezier cubic interpolation
+- Audio DSP: 3-band EQ, compressor, spectral noise reduction (rustfft), Schroeder reverb
+- Audio mixer with per-track volume/pan (equal-power pan law), clip effect chain
+- Voiceover recording via CPAL with WAV export
+- LUT import (.cube 3D LUT parser + trilinear interpolation compute shader)
+- Text/title overlay via cosmic-text rasterization
+- Picture-in-picture transform (scale + translate compute shader)
+- Speed ramping with keyframed variable speed (trapezoidal integration)
+- Proxy workflow (GStreamer transcode to lower-res preview files)
+- Multi-cam editing (angle groups with sync offsets, switch commands)
+- Project autosave (tokio interval task, crash recovery, cleanup on manual save)
+- WASM plugin system via wasmtime (optional `plugins` feature)
+- Tarang export migration stub with GStreamer fallback
+- Export format expansion: ProRes, DNxHR, MKV, GIF
+- Hardware encode detection: VAAPI -> NVENC -> x264enc fallback
+- 453 tests, 50%+ coverage (threshold raised to 40%)
+
+### Infrastructure
+- CI tarang stub script for builds without the tarang repo
+- Version bump script (`scripts/bump-version.sh`) with patch/today modes
+- VERSION file as single source of truth for all version references
+
 ## 2026.3.15
 
 ### GPU-Accelerated Preview

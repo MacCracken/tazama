@@ -6737,7 +6737,7 @@ dependencies = [
 
 [[package]]
 name = "tazama"
-version = "2026.3.15"
+version = "2026.3.18-1"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -6760,7 +6760,7 @@ dependencies = [
 
 [[package]]
 name = "tazama-core"
-version = "2026.3.15"
+version = "2026.3.18-1"
 dependencies = [
  "chrono",
  "serde",
@@ -6771,7 +6771,7 @@ dependencies = [
 
 [[package]]
 name = "tazama-gpu"
-version = "2026.3.15"
+version = "2026.3.18-1"
 dependencies = [
  "ash",
  "bytemuck",
@@ -6786,7 +6786,7 @@ dependencies = [
 
 [[package]]
 name = "tazama-mcp"
-version = "2026.3.15"
+version = "2026.3.18-1"
 dependencies = [
  "anyhow",
  "image",
@@ -6803,7 +6803,7 @@ dependencies = [
 
 [[package]]
 name = "tazama-media"
-version = "2026.3.15"
+version = "2026.3.18-1"
 dependencies = [
  "bytes",
  "cpal",
@@ -6830,7 +6830,7 @@ dependencies = [
 
 [[package]]
 name = "tazama-storage"
-version = "2026.3.15"
+version = "2026.3.18-1"
 dependencies = [
  "chrono",
  "serde",

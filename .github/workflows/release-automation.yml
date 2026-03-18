@@ -33,14 +33,19 @@ jobs:
             exit 1
           fi
 
-      - name: Update VERSION file
-        run: echo "${{ inputs.version }}" > VERSION
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Sync version across all files
+        run: ./scripts/bump-version.sh "${{ inputs.version }}"
 
       - name: Commit and tag
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add VERSION
+          git add VERSION Cargo.toml Cargo.lock crates/app/tauri.conf.json ui/package.json ui/package-lock.json
           git commit -m "release: ${{ inputs.version }}"
           git tag -a "${{ inputs.version }}" -m "Release ${{ inputs.version }}"
 

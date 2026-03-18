@@ -2,12 +2,13 @@
 # bump-version.sh — Update all version references from the VERSION file.
 #
 # Usage:
-#   ./scripts/bump-version.sh              # set version from VERSION file
-#   ./scripts/bump-version.sh 2026.3.15    # set specific version
-#   ./scripts/bump-version.sh patch        # bump to YYYY.M.D-N (increment N)
-#   ./scripts/bump-version.sh today        # set to today's date
+#   ./scripts/bump-version.sh              # sync all files to current VERSION
+#   ./scripts/bump-version.sh 2026.3.18    # set specific version and sync
+#   ./scripts/bump-version.sh patch        # bump YYYY.M.D-N (increment N)
+#   ./scripts/bump-version.sh today        # set to today's date YYYY.M.D
 #
-# Version format: YYYY.M.D or YYYY.M.D-N for patches
+# The VERSION file is the single source of truth.
+# Version format: YYYY.M.D or YYYY.M.D-N for patches.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -24,40 +25,52 @@ if [[ $# -ge 1 ]]; then
         else
             new_version="${current}-1"
         fi
-        echo "$new_version" > "$VERSION_FILE"
+        echo -n "$new_version" > "$VERSION_FILE"
     elif [[ "$1" == "today" ]]; then
         year=$(date +%Y)
         month=$(date +%-m)
         day=$(date +%-d)
-        echo "${year}.${month}.${day}" > "$VERSION_FILE"
+        echo -n "${year}.${month}.${day}" > "$VERSION_FILE"
     else
-        echo "$1" > "$VERSION_FILE"
+        echo -n "$1" > "$VERSION_FILE"
     fi
 fi
 
 VERSION=$(cat "$VERSION_FILE" | tr -d '[:space:]')
-echo "Setting version to: $VERSION"
+echo "Syncing version: $VERSION"
+echo ""
 
-# Cargo workspace version
+# 1. Cargo.toml workspace version
 sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
+echo "  Cargo.toml              -> $VERSION"
 
-# tauri.conf.json
+# 2. tauri.conf.json
 if [[ -f crates/app/tauri.conf.json ]]; then
     sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" crates/app/tauri.conf.json
+    echo "  crates/app/tauri.conf.json -> $VERSION"
 fi
 
-# package.json
-if [[ -f package.json ]]; then
-    sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
+# 3. ui/package.json
+if [[ -f ui/package.json ]]; then
+    sed -i "0,/\"version\": \".*\"/{s/\"version\": \".*\"/\"version\": \"$VERSION\"/}" ui/package.json
+    echo "  ui/package.json         -> $VERSION"
+fi
+
+# 4. ui/package-lock.json
+if [[ -f ui/package-lock.json ]]; then
+    (cd ui && npm install --package-lock-only --silent 2>/dev/null) || true
+    echo "  ui/package-lock.json    -> $VERSION"
+fi
+
+# 5. Cargo.lock
+if command -v cargo &> /dev/null; then
+    cargo update --workspace --quiet 2>/dev/null || true
+    echo "  Cargo.lock              -> updated"
 fi
 
 echo ""
-echo "Updated:"
-echo "  VERSION              → $VERSION"
-echo "  Cargo.toml           → $VERSION"
-[[ -f crates/app/tauri.conf.json ]] && echo "  tauri.conf.json      → $VERSION"
-[[ -f package.json ]] && echo "  package.json         → $VERSION"
-echo ""
-
-RELEASE_NAME=$(echo "$VERSION" | sed 's/\.//g; s/-//g')
-echo "Release filename stem: tazama-${RELEASE_NAME}"
+echo "Done. Verify:"
+echo "  VERSION:            $(cat "$VERSION_FILE")"
+grep '^version' Cargo.toml | head -1 | sed 's/^/  Cargo.toml:         /'
+grep '"version"' crates/app/tauri.conf.json 2>/dev/null | head -1 | xargs | sed 's/^/  tauri.conf.json:    /'
+grep '"version"' ui/package.json 2>/dev/null | head -1 | xargs | sed 's/^/  package.json:       /'
