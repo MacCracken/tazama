@@ -346,6 +346,7 @@ async fn handle_add_clip(id: &Value, args: &Value, state: &mut ServerState) -> V
         sample_rate: media_info.audio_streams.first().map(|a| a.sample_rate),
         channels: media_info.audio_streams.first().map(|a| a.channels),
         info: Some(media_info),
+        proxy_path: None,
     };
 
     let clip_name = PathBuf::from(source)
@@ -456,10 +457,16 @@ async fn handle_export(id: &Value, args: &Value, state: &ServerState) -> Value {
     let format = match format_str {
         "mp4" => tazama_media::ExportFormat::Mp4,
         "webm" => tazama_media::ExportFormat::WebM,
+        "prores" => tazama_media::ExportFormat::ProRes,
+        "dnxhr" => tazama_media::ExportFormat::DnxHr,
+        "mkv" => tazama_media::ExportFormat::Mkv,
+        "gif" => tazama_media::ExportFormat::Gif,
         _ => {
             return mcp_error(
                 id,
-                format!("Unsupported format: {format_str}. Use mp4 or webm."),
+                format!(
+                    "Unsupported format: {format_str}. Use mp4, webm, prores, dnxhr, mkv, or gif."
+                ),
             );
         }
     };
@@ -475,6 +482,7 @@ async fn handle_export(id: &Value, args: &Value, state: &ServerState) -> Value {
         ),
         sample_rate: project.settings.sample_rate,
         channels: project.settings.channels,
+        hardware_accel: false,
     };
 
     // Create video/audio channels for the export pipeline

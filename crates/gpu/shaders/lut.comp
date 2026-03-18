@@ -1,0 +1,87 @@
+#version 450
+
+layout(local_size_x = 256) in;
+
+layout(set = 0, binding = 0) buffer InputBuffer {
+    uint pixels_in[];
+};
+
+layout(set = 0, binding = 1) buffer OutputBuffer {
+    uint pixels_out[];
+};
+
+layout(set = 0, binding = 2) buffer LutBuffer {
+    vec4 lut_data[];
+};
+
+layout(push_constant) uniform PushConstants {
+    uint width;
+    uint height;
+    uint lut_size;
+    uint _pad;
+};
+
+vec4 unpack_rgba(uint packed) {
+    return vec4(
+        float(packed & 0xFFu) / 255.0,
+        float((packed >> 8u) & 0xFFu) / 255.0,
+        float((packed >> 16u) & 0xFFu) / 255.0,
+        float((packed >> 24u) & 0xFFu) / 255.0
+    );
+}
+
+uint pack_rgba(vec4 c) {
+    uvec4 u = uvec4(clamp(c * 255.0, 0.0, 255.0));
+    return u.x | (u.y << 8u) | (u.z << 16u) | (u.w << 24u);
+}
+
+// Sample the 3D LUT with trilinear interpolation.
+// The LUT is indexed as: index = r + g * lut_size + b * lut_size * lut_size
+vec3 sample_lut(vec3 color) {
+    float s = float(lut_size - 1u);
+    vec3 scaled = clamp(color, 0.0, 1.0) * s;
+
+    // Integer coordinates (lower corner)
+    uvec3 lo = uvec3(floor(scaled));
+    // Clamp upper corner
+    uvec3 hi = min(lo + 1u, uvec3(lut_size - 1u));
+    // Fractional part
+    vec3 f = scaled - vec3(lo);
+
+    // 8 corner lookups: index = r + g * size + b * size * size
+    uint sz = lut_size;
+    uint sz2 = sz * sz;
+
+    vec3 c000 = lut_data[lo.r + lo.g * sz + lo.b * sz2].rgb;
+    vec3 c100 = lut_data[hi.r + lo.g * sz + lo.b * sz2].rgb;
+    vec3 c010 = lut_data[lo.r + hi.g * sz + lo.b * sz2].rgb;
+    vec3 c110 = lut_data[hi.r + hi.g * sz + lo.b * sz2].rgb;
+    vec3 c001 = lut_data[lo.r + lo.g * sz + hi.b * sz2].rgb;
+    vec3 c101 = lut_data[hi.r + lo.g * sz + hi.b * sz2].rgb;
+    vec3 c011 = lut_data[lo.r + hi.g * sz + hi.b * sz2].rgb;
+    vec3 c111 = lut_data[hi.r + hi.g * sz + hi.b * sz2].rgb;
+
+    // Trilinear interpolation
+    vec3 c00 = mix(c000, c100, f.r);
+    vec3 c10 = mix(c010, c110, f.r);
+    vec3 c01 = mix(c001, c101, f.r);
+    vec3 c11 = mix(c011, c111, f.r);
+
+    vec3 c0 = mix(c00, c10, f.g);
+    vec3 c1 = mix(c01, c11, f.g);
+
+    return mix(c0, c1, f.b);
+}
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    uint total = width * height;
+    if (idx >= total) return;
+
+    vec4 color = unpack_rgba(pixels_in[idx]);
+
+    // Apply 3D LUT with trilinear interpolation
+    color.rgb = sample_lut(color.rgb);
+
+    pixels_out[idx] = pack_rgba(color);
+}

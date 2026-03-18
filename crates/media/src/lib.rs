@@ -1,14 +1,20 @@
 pub mod decode;
+pub mod dsp;
 pub mod error;
 pub mod export;
 pub mod mix;
 pub mod playback;
 pub mod probe;
+pub mod proxy;
+pub mod record;
 pub mod thumbnail;
 pub mod waveform;
 
 #[cfg(feature = "tarang")]
 mod convert;
+
+#[cfg(feature = "plugins")]
+pub mod plugin_runtime;
 
 use std::sync::Once;
 

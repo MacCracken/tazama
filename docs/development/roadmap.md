@@ -48,6 +48,36 @@ Tauri v2 + React 19 / TypeScript / Vite / Tailwind v4 / Zustand frontend.
 
 ---
 
+## Post-v1 Completed
+
+- **Non-AI Features** — Keyframe animation engine, audio DSP (EQ/compressor/noise reduction/reverb), mixer with per-track volume/pan, voiceover recording, LUT import, text overlay, PiP transform, speed ramping, proxy workflow, multi-cam editing, project autosave, WASM plugin system, tarang export migration, format expansion (ProRes/DNxHR/MKV/GIF), hardware encode detection (VAAPI/NVENC fallback) (2026.3.18)
+
+---
+
+## P0 — Code Audit & Refactoring
+
+High priority. The post-v1 feature push added significant surface area across all crates. Before building on top of it, harden the foundation.
+
+### Round 1: Structural Audit
+- [ ] Review all new DSP modules (`crates/media/src/dsp/`) — validate filter coefficients, edge cases (silence, DC offset, NaN), benchmark performance
+- [ ] Audit GPU render path — verify keyframe resolution doesn't regress render perf, check LUT/text/transform shader correctness with real media
+- [ ] Review command.rs — ensure all new EditCommand variants have symmetric apply/undo, add integration tests for SetKeyframes and SwitchAngle
+- [ ] Audit autosave — stress test with rapid mutations and simulated crashes, verify recovery across all project shapes
+- [ ] Review export pipeline — test all 6 export formats with real media, verify hardware encode fallback on machines without VAAPI/NVENC
+- [ ] Audit WASM plugin runtime — sandboxing, memory limits, malicious plugin handling
+- [ ] TypeScript/Rust type parity — automated check that serde output matches TS interfaces
+
+### Round 2: Refactoring
+- [ ] Extract common GPU dispatch patterns (2-buffer, 3-buffer) into a typed helper to reduce boilerplate in render.rs
+- [ ] Consolidate effect parameter resolution — the `resolve_param` closure is repeated per-clip; lift to a shared utility
+- [ ] Unify audio effect application — mixer applies effects inline; consider a trait-based `AudioProcessor` pipeline
+- [ ] Reduce render.rs size (~1000+ lines) — split into `render/effects.rs`, `render/transitions.rs`, `render/collect.rs`
+- [ ] Review serde defaults — ensure all new `#[serde(default)]` fields are backward-compatible with existing project files
+- [ ] Clean up proxy.rs GStreamer pipeline — handle audio-only and image inputs gracefully
+- [ ] Evaluate cosmic-text performance — cache FontSystem/SwashCache across frames instead of per-call
+
+---
+
 ## Post-v1 Features
 
 ### Tarang Media Backend Migration

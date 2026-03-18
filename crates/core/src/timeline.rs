@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 use crate::clip::{Clip, ClipId, ClipKind};
 use crate::marker::{Marker, MarkerId};
+use crate::multicam::MultiCamGroup;
 
 #[derive(Debug, Error)]
 pub enum TimelineError {
@@ -56,6 +57,16 @@ pub struct Track {
     pub locked: bool,
     pub solo: bool,
     pub visible: bool,
+    /// Track-level volume (0.0 to 1.0+, default 1.0).
+    #[serde(default = "default_volume")]
+    pub volume: f32,
+    /// Track-level stereo pan (-1.0 = full left, 0.0 = center, 1.0 = full right).
+    #[serde(default)]
+    pub pan: f32,
+}
+
+fn default_volume() -> f32 {
+    1.0
 }
 
 impl Track {
@@ -69,6 +80,8 @@ impl Track {
             locked: false,
             solo: false,
             visible: true,
+            volume: 1.0,
+            pan: 0.0,
         }
     }
 
@@ -204,6 +217,8 @@ impl Track {
 pub struct Timeline {
     pub tracks: Vec<Track>,
     pub markers: Vec<Marker>,
+    #[serde(default)]
+    pub multicam_groups: Vec<MultiCamGroup>,
 }
 
 impl Timeline {
@@ -211,6 +226,7 @@ impl Timeline {
         Self {
             tracks: Vec::new(),
             markers: Vec::new(),
+            multicam_groups: Vec::new(),
         }
     }
 
@@ -447,6 +463,7 @@ mod tests {
             sample_rate: None,
             channels: None,
             info: None,
+            proxy_path: None,
         });
 
         // Valid trim

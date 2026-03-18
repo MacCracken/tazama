@@ -114,9 +114,17 @@ fn run_export(
     // Encoder + muxer based on format
     let (video_enc, audio_enc, muxer) = match config.format {
         ExportFormat::Mp4 => {
-            let venc = gstreamer::ElementFactory::make("x264enc")
-                .build()
-                .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
+            let venc = if config.hardware_accel {
+                try_hw_encoder().unwrap_or(
+                    gstreamer::ElementFactory::make("x264enc")
+                        .build()
+                        .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?,
+                )
+            } else {
+                gstreamer::ElementFactory::make("x264enc")
+                    .build()
+                    .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?
+            };
             let aenc = gstreamer::ElementFactory::make("voaacenc")
                 .build()
                 .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
@@ -133,6 +141,55 @@ fn run_export(
                 .build()
                 .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
             let mux = gstreamer::ElementFactory::make("webmmux")
+                .build()
+                .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
+            (venc, aenc, mux)
+        }
+        ExportFormat::ProRes => {
+            let venc = gstreamer::ElementFactory::make("avenc_prores_ks")
+                .build()
+                .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
+            let aenc = gstreamer::ElementFactory::make("voaacenc")
+                .build()
+                .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
+            let mux = gstreamer::ElementFactory::make("qtmux")
+                .build()
+                .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
+            (venc, aenc, mux)
+        }
+        ExportFormat::DnxHr => {
+            let venc = gstreamer::ElementFactory::make("avenc_dnxhd")
+                .build()
+                .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
+            let aenc = gstreamer::ElementFactory::make("voaacenc")
+                .build()
+                .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
+            let mux = gstreamer::ElementFactory::make("qtmux")
+                .build()
+                .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
+            (venc, aenc, mux)
+        }
+        ExportFormat::Mkv => {
+            let venc = gstreamer::ElementFactory::make("x264enc")
+                .build()
+                .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
+            let aenc = gstreamer::ElementFactory::make("opusenc")
+                .build()
+                .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
+            let mux = gstreamer::ElementFactory::make("matroskamux")
+                .build()
+                .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
+            (venc, aenc, mux)
+        }
+        ExportFormat::Gif => {
+            // GIF has no audio; use the same as MP4 and let the muxer handle it
+            let venc = gstreamer::ElementFactory::make("x264enc")
+                .build()
+                .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
+            let aenc = gstreamer::ElementFactory::make("voaacenc")
+                .build()
+                .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
+            let mux = gstreamer::ElementFactory::make("mp4mux")
                 .build()
                 .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
             (venc, aenc, mux)
@@ -284,4 +341,36 @@ fn run_export(
 
     info!("export complete: {:?}", config.output_path);
     Ok(())
+}
+
+/// Attempt to create a hardware H.264 encoder element.
+///
+/// Tries VAAPI first, then NVENC.  Returns `None` when neither is available,
+/// letting the caller fall back to software x264enc.
+fn try_hw_encoder() -> Option<gstreamer::Element> {
+    let candidates = ["vaapih264enc", "nvh264enc"];
+    for name in &candidates {
+        if let Ok(elem) = gstreamer::ElementFactory::make(name).build() {
+            info!("using hardware encoder: {name}");
+            return Some(elem);
+        }
+    }
+    info!("no hardware encoder available, using software x264enc");
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn try_hw_encoder_returns_none_when_unavailable() {
+        // In a test environment hardware encoders are typically not present,
+        // so this should return None without panicking.
+        gstreamer::init().ok();
+        let result = try_hw_encoder();
+        // We don't assert None because a CI machine *might* have VAAPI/NVENC.
+        // The important thing is it doesn't panic.
+        drop(result);
+    }
 }

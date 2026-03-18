@@ -8,6 +8,8 @@ pub static CROP_SPV: &[u8] = include_bytes!("../shaders/crop.spv");
 pub static DISSOLVE_SPV: &[u8] = include_bytes!("../shaders/dissolve.spv");
 pub static WIPE_SPV: &[u8] = include_bytes!("../shaders/wipe.spv");
 pub static FADE_SPV: &[u8] = include_bytes!("../shaders/fade.spv");
+pub static LUT_SPV: &[u8] = include_bytes!("../shaders/lut.spv");
+pub static TRANSFORM_SPV: &[u8] = include_bytes!("../shaders/transform.spv");
 
 /// A loaded Vulkan shader module.
 pub struct ShaderModule {
@@ -53,6 +55,8 @@ mod tests {
         assert!(DISSOLVE_SPV.len().is_multiple_of(4));
         assert!(WIPE_SPV.len().is_multiple_of(4));
         assert!(FADE_SPV.len().is_multiple_of(4));
+        assert!(LUT_SPV.len().is_multiple_of(4));
+        assert!(TRANSFORM_SPV.len().is_multiple_of(4));
     }
 
     #[test]
@@ -63,6 +67,8 @@ mod tests {
         assert!(!DISSOLVE_SPV.is_empty());
         assert!(!WIPE_SPV.is_empty());
         assert!(!FADE_SPV.is_empty());
+        assert!(!LUT_SPV.is_empty());
+        assert!(!TRANSFORM_SPV.is_empty());
     }
 
     #[test]
@@ -78,5 +84,7 @@ mod tests {
         check_magic(DISSOLVE_SPV);
         check_magic(WIPE_SPV);
         check_magic(FADE_SPV);
+        check_magic(LUT_SPV);
+        check_magic(TRANSFORM_SPV);
     }
 }

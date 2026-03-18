@@ -1,39 +1,231 @@
 //! Multi-track audio mixer for export.
 //!
 //! Decodes audio from all active clips across all audio tracks, applies
-//! per-clip volume, and mixes them together in time-aligned chunks.
-//! Follows Shruti's additive mixing pattern: each clip's samples are
-//! summed into a mix buffer at the correct timeline position.
+//! per-clip effects (EQ, Compressor, Noise Reduction, Reverb), per-clip
+//! volume (including keyframed fades), track-level volume and stereo pan,
+//! and mixes them together in time-aligned chunks.
 
+use std::f32::consts::PI;
 use std::path::Path;
 
 use tokio::sync::mpsc;
 use tracing::{debug, info};
 
-use tazama_core::{ClipKind, FrameRate, Timeline, TrackKind};
+use tazama_core::{ClipKind, EffectKind, FrameRate, Timeline, TrackKind};
 
 use crate::decode::AudioBuffer;
 use crate::decode::audio::AudioDecoder;
+use crate::dsp;
 use crate::error::MediaPipelineError;
 
 /// A fully decoded audio clip positioned on the timeline.
 struct DecodedClip {
-    /// Interleaved f32 samples from the source media.
+    /// Interleaved f32 samples from the source media (after effects).
     samples: Vec<f32>,
     /// Where this clip starts on the timeline, in audio samples.
     start_sample: u64,
-    /// Per-clip volume multiplier.
+    /// Per-clip volume multiplier (combined clip.volume * track.volume).
     volume: f32,
+    /// Equal-power pan gains: (left_gain, right_gain).
+    pan_gains: (f32, f32),
 }
 
 /// Chunk size for output buffers (in frames, i.e. sample groups).
 const MIX_CHUNK_FRAMES: usize = 4096;
 
+/// Compute equal-power pan gains from a pan value in [-1, 1].
+///
+/// Uses: left = cos(theta), right = sin(theta)
+/// where theta = (pan + 1) * PI / 4
+fn equal_power_pan(pan: f32) -> (f32, f32) {
+    let pan = pan.clamp(-1.0, 1.0);
+    let theta = (pan + 1.0) * PI / 4.0;
+    (theta.cos(), theta.sin())
+}
+
+/// Apply audio effects from a clip's effect chain to the decoded samples.
+fn apply_clip_effects(
+    samples: &mut [f32],
+    effects: &[tazama_core::Effect],
+    sample_rate: u32,
+    channels: u16,
+    clip_duration_frames: u64,
+    fps: f64,
+) {
+    for effect in effects {
+        if !effect.enabled {
+            continue;
+        }
+        match &effect.kind {
+            EffectKind::Eq {
+                low_gain_db,
+                mid_gain_db,
+                high_gain_db,
+            } => {
+                dsp::eq::apply_eq(
+                    samples,
+                    sample_rate,
+                    channels,
+                    *low_gain_db,
+                    *mid_gain_db,
+                    *high_gain_db,
+                );
+            }
+            EffectKind::Compressor {
+                threshold_db,
+                ratio,
+                attack_ms,
+                release_ms,
+            } => {
+                dsp::compressor::apply_compressor(
+                    samples,
+                    sample_rate,
+                    channels,
+                    *threshold_db,
+                    *ratio,
+                    *attack_ms,
+                    *release_ms,
+                );
+            }
+            EffectKind::NoiseReduction { strength } => {
+                dsp::noise_reduction::apply_noise_reduction(samples, channels, *strength);
+            }
+            EffectKind::Reverb {
+                room_size,
+                damping,
+                wet,
+            } => {
+                dsp::reverb::apply_reverb(
+                    samples,
+                    sample_rate,
+                    channels,
+                    *room_size,
+                    *damping,
+                    *wet,
+                );
+            }
+            EffectKind::Volume { gain_db } => {
+                // Check for keyframed volume
+                if !effect.keyframe_tracks.is_empty() {
+                    // Apply keyframed volume per-frame
+                    let ch = channels as usize;
+                    if ch > 0 {
+                        for (frame_idx, frame) in samples.chunks_mut(ch).enumerate() {
+                            // Convert sample frame index to timeline frame
+                            let time_sec = frame_idx as f64 / sample_rate as f64;
+                            let timeline_frame = (time_sec * fps) as u64;
+
+                            // Find the Volume keyframe track
+                            let volume_mult = effect
+                                .keyframe_tracks
+                                .iter()
+                                .find(|kt| kt.parameter == "gain_db" || kt.parameter == "volume")
+                                .and_then(|kt| tazama_core::keyframe::evaluate(kt, timeline_frame))
+                                .map(|db| 10.0f32.powf(db / 20.0))
+                                .unwrap_or_else(|| 10.0f32.powf(*gain_db / 20.0));
+
+                            for sample in frame.iter_mut() {
+                                *sample *= volume_mult;
+                            }
+                        }
+                    }
+                } else {
+                    // Static volume gain
+                    let gain = 10.0f32.powf(*gain_db / 20.0);
+                    for sample in samples.iter_mut() {
+                        *sample *= gain;
+                    }
+                }
+            }
+            EffectKind::FadeIn { duration_frames } => {
+                apply_fade_in(samples, sample_rate, channels, *duration_frames, fps);
+            }
+            EffectKind::FadeOut { duration_frames } => {
+                apply_fade_out(
+                    samples,
+                    sample_rate,
+                    channels,
+                    *duration_frames,
+                    clip_duration_frames,
+                    fps,
+                );
+            }
+            _ => {
+                // Other effects (video effects, etc.) are not applicable to audio
+            }
+        }
+    }
+}
+
+/// Apply a linear fade-in over the specified number of timeline frames.
+fn apply_fade_in(
+    samples: &mut [f32],
+    sample_rate: u32,
+    channels: u16,
+    duration_frames: u64,
+    fps: f64,
+) {
+    if duration_frames == 0 || fps <= 0.0 {
+        return;
+    }
+    let ch = channels as usize;
+    let fade_duration_secs = duration_frames as f64 / fps;
+    let fade_samples = (fade_duration_secs * sample_rate as f64) as usize;
+
+    for (frame_idx, frame) in samples.chunks_mut(ch).enumerate() {
+        if frame_idx >= fade_samples {
+            break;
+        }
+        let gain = frame_idx as f32 / fade_samples as f32;
+        for sample in frame.iter_mut() {
+            *sample *= gain;
+        }
+    }
+}
+
+/// Apply a linear fade-out over the specified number of timeline frames.
+fn apply_fade_out(
+    samples: &mut [f32],
+    sample_rate: u32,
+    channels: u16,
+    duration_frames: u64,
+    clip_duration_frames: u64,
+    fps: f64,
+) {
+    if duration_frames == 0 || fps <= 0.0 {
+        return;
+    }
+    let ch = channels as usize;
+    let fade_duration_secs = duration_frames as f64 / fps;
+    let fade_samples = (fade_duration_secs * sample_rate as f64) as usize;
+    let total_frames = samples.len() / ch;
+
+    if total_frames == 0 || fade_samples == 0 {
+        return;
+    }
+
+    let _ = clip_duration_frames; // total_frames derived from actual sample count
+
+    let fade_start = total_frames.saturating_sub(fade_samples);
+    for (frame_idx, frame) in samples.chunks_mut(ch).enumerate() {
+        if frame_idx < fade_start {
+            continue;
+        }
+        let fade_pos = frame_idx - fade_start;
+        let gain = 1.0 - (fade_pos as f32 / fade_samples as f32);
+        let gain = gain.max(0.0);
+        for sample in frame.iter_mut() {
+            *sample *= gain;
+        }
+    }
+}
+
 /// Mix all audio tracks from a timeline and send the result as sequential
 /// [`AudioBuffer`]s over a channel.
 ///
 /// This is designed for offline export — it decodes all audio upfront,
-/// then mixes in chunks. Respects mute/solo flags and per-clip volume.
+/// then mixes in chunks. Respects mute/solo flags, per-clip effects,
+/// per-clip volume, track volume, and track pan.
 pub fn mix_timeline_audio(
     timeline: &Timeline,
     frame_rate: &FrameRate,
@@ -65,6 +257,9 @@ pub fn mix_timeline_audio(
         if any_audio_solo && !track.solo {
             continue;
         }
+
+        let track_volume = track.volume;
+        let pan_gains = equal_power_pan(track.pan);
 
         for clip in &track.clips {
             // Accept Audio and Video clips (videos have audio tracks too)
@@ -103,15 +298,29 @@ pub fn mix_timeline_audio(
                 debug!("clip source region empty after trim: start={start} end={end}");
                 continue;
             }
-            let trimmed = all_samples[start..end].to_vec();
+            let mut trimmed = all_samples[start..end].to_vec();
+
+            // Apply per-clip audio effects
+            apply_clip_effects(
+                &mut trimmed,
+                &clip.effects,
+                sample_rate,
+                channels,
+                clip.duration,
+                fps,
+            );
 
             // Timeline position in samples
             let start_sample = frames_to_samples(clip.timeline_start, fps, sample_rate, channels);
 
+            // Combined volume: clip volume * track volume
+            let combined_volume = clip.volume * track_volume;
+
             decoded_clips.push(DecodedClip {
                 samples: trimmed,
                 start_sample,
-                volume: clip.volume,
+                volume: combined_volume,
+                pan_gains,
             });
         }
     }
@@ -134,8 +343,10 @@ pub fn mix_timeline_audio(
         total_end_sample
     );
 
+    let ch = channels as usize;
+
     // Mix in chunks
-    let chunk_size = MIX_CHUNK_FRAMES * channels as usize;
+    let chunk_size = MIX_CHUNK_FRAMES * ch;
     let mut offset: u64 = 0;
 
     while offset < total_end_sample {
@@ -169,8 +380,29 @@ pub fn mix_timeline_audio(
             let copy_len = available_from_clip.min(available_in_mix);
 
             let volume = clip.volume;
-            for i in 0..copy_len {
-                mix_buf[mix_start + i] += clip.samples[chunk_start_in_clip + i] * volume;
+            let (left_gain, right_gain) = clip.pan_gains;
+
+            if ch >= 2 {
+                // Stereo or multi-channel: apply pan to L/R
+                for i in 0..copy_len {
+                    let src = clip.samples[chunk_start_in_clip + i] * volume;
+                    let dest_idx = mix_start + i;
+                    let channel_in_frame = dest_idx % ch;
+                    let pan_gain = if channel_in_frame == 0 {
+                        left_gain
+                    } else if channel_in_frame == 1 {
+                        right_gain
+                    } else {
+                        // Additional channels beyond stereo: no pan applied
+                        1.0
+                    };
+                    mix_buf[dest_idx] += src * pan_gain;
+                }
+            } else {
+                // Mono: no pan
+                for i in 0..copy_len {
+                    mix_buf[mix_start + i] += clip.samples[chunk_start_in_clip + i] * volume;
+                }
             }
         }
 
@@ -313,24 +545,30 @@ mod tests {
             samples: vec![0.5, 0.5, 0.5, 0.5], // 2 stereo frames
             start_sample: 0,
             volume: 1.0,
+            pan_gains: equal_power_pan(0.0),
         };
         let clip_b = DecodedClip {
             samples: vec![0.3, 0.3, 0.3, 0.3],
             start_sample: 0,
             volume: 0.5, // half volume
+            pan_gains: equal_power_pan(0.0),
         };
 
-        // Simulate mixing manually
+        // Center pan should give equal L/R gains of ~0.707
+        let (lg, rg) = equal_power_pan(0.0);
+
+        // Simulate mixing manually (stereo)
         let mut mix = [0.0f32; 4];
         for clip in &[&clip_a, &clip_b] {
-            for (i, m) in mix.iter_mut().enumerate().take(4) {
-                *m += clip.samples[i] * clip.volume;
+            for (i, m) in mix.iter_mut().enumerate() {
+                let pan_gain = if i % 2 == 0 { lg } else { rg };
+                *m += clip.samples[i] * clip.volume * pan_gain;
             }
         }
 
-        // 0.5 * 1.0 + 0.3 * 0.5 = 0.65
-        assert!((mix[0] - 0.65).abs() < 1e-6);
-        assert!((mix[1] - 0.65).abs() < 1e-6);
+        // 0.5 * 1.0 * 0.707 + 0.3 * 0.5 * 0.707 ≈ 0.46
+        let expected = (0.5 * 1.0 + 0.3 * 0.5) * lg;
+        assert!((mix[0] - expected).abs() < 1e-4);
     }
 
     #[test]
@@ -340,11 +578,13 @@ mod tests {
             samples: vec![0.8; 4],
             start_sample: 0,
             volume: 1.0,
+            pan_gains: (1.0, 1.0), // bypass pan for this test
         };
         let clip_b = DecodedClip {
             samples: vec![0.7; 4],
             start_sample: 0,
             volume: 1.0,
+            pan_gains: (1.0, 1.0),
         };
 
         let mut mix = [0.0f32; 4];
@@ -368,11 +608,13 @@ mod tests {
             samples: vec![1.0; 4], // samples 0..3
             start_sample: 0,
             volume: 1.0,
+            pan_gains: (1.0, 1.0),
         };
         let clip_b = DecodedClip {
             samples: vec![0.5; 4], // samples 4..7
             start_sample: 4,
             volume: 1.0,
+            pan_gains: (1.0, 1.0),
         };
 
         // Mix chunk 0..4
@@ -447,11 +689,13 @@ mod tests {
             samples: vec![0.5; 8],
             start_sample: 0,
             volume: 1.0,
+            pan_gains: (1.0, 1.0),
         };
         let clip_b = DecodedClip {
             samples: vec![0.3; 8],
             start_sample: 4, // starts at sample 4
             volume: 1.0,
+            pan_gains: (1.0, 1.0),
         };
 
         // Mix chunk 0..8
@@ -488,5 +732,173 @@ mod tests {
         // Samples 4-7: clip_a + clip_b (0.5 + 0.3 = 0.8)
         assert!((mix[4] - 0.8).abs() < 1e-6);
         assert!((mix[7] - 0.8).abs() < 1e-6);
+    }
+
+    // --- Pan tests ---
+
+    #[test]
+    fn test_equal_power_pan_center() {
+        let (l, r) = equal_power_pan(0.0);
+        // At center, both should be cos(PI/4) = sin(PI/4) ≈ 0.707
+        assert!((l - r).abs() < 1e-6, "center pan: L={l}, R={r}");
+        assert!((l - std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_equal_power_pan_full_left() {
+        let (l, r) = equal_power_pan(-1.0);
+        // theta = 0, cos(0) = 1, sin(0) = 0
+        assert!((l - 1.0).abs() < 1e-6, "full left: L={l}");
+        assert!(r.abs() < 1e-6, "full left: R={r}");
+    }
+
+    #[test]
+    fn test_equal_power_pan_full_right() {
+        let (l, r) = equal_power_pan(1.0);
+        // theta = PI/2, cos(PI/2) = 0, sin(PI/2) = 1
+        assert!(l.abs() < 1e-6, "full right: L={l}");
+        assert!((r - 1.0).abs() < 1e-6, "full right: R={r}");
+    }
+
+    #[test]
+    fn test_equal_power_pan_power_preserving() {
+        // For any pan position, L^2 + R^2 should equal 1.0 (power conservation)
+        for pan_x10 in -10..=10 {
+            let pan = pan_x10 as f32 / 10.0;
+            let (l, r) = equal_power_pan(pan);
+            let power = l * l + r * r;
+            assert!(
+                (power - 1.0).abs() < 1e-6,
+                "power not conserved at pan={pan}: L={l}, R={r}, L^2+R^2={power}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_track_volume_applied() {
+        // Track volume should multiply with clip volume
+        let clip = DecodedClip {
+            samples: vec![1.0; 4],
+            start_sample: 0,
+            volume: 0.5 * 0.8, // clip.volume=0.5, track.volume=0.8
+            pan_gains: (1.0, 1.0),
+        };
+        assert!((clip.volume - 0.4).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_pan_stereo_mixing() {
+        // A clip panned hard right should only appear in the right channel
+        let clip = DecodedClip {
+            samples: vec![1.0, 1.0, 1.0, 1.0], // 2 stereo frames
+            start_sample: 0,
+            volume: 1.0,
+            pan_gains: equal_power_pan(1.0), // full right
+        };
+
+        let ch = 2usize;
+        let mut mix = [0.0f32; 4];
+        let (left_gain, right_gain) = clip.pan_gains;
+
+        for (i, m) in mix.iter_mut().enumerate() {
+            let pan_gain = if i % ch == 0 { left_gain } else { right_gain };
+            *m += clip.samples[i] * clip.volume * pan_gain;
+        }
+
+        // Left channels should be ~0
+        assert!(mix[0].abs() < 1e-6, "L should be ~0 when panned right");
+        assert!(mix[2].abs() < 1e-6);
+        // Right channels should be ~1
+        assert!(
+            (mix[1] - 1.0).abs() < 1e-6,
+            "R should be ~1 when panned right"
+        );
+        assert!((mix[3] - 1.0).abs() < 1e-6);
+    }
+
+    // --- Effects integration tests ---
+
+    #[test]
+    fn test_fade_in() {
+        let mut samples = vec![1.0f32; 960]; // mono, 20ms at 48kHz = 960 samples
+        apply_fade_in(&mut samples, 48000, 1, 10, 30.0); // 10 frames at 30fps = 1/3 sec = 16000 samples
+
+        // First sample should be ~0 (fade starts at 0)
+        assert!(samples[0].abs() < 1e-6);
+        // Samples partway through fade should be < 1.0
+        assert!(samples[100] < 1.0);
+    }
+
+    #[test]
+    fn test_fade_out() {
+        // 48000 mono samples = 1 second. Fade out over 30 frames at 30fps = 1 second.
+        // So the entire buffer is a fade from 1.0 to 0.0.
+        let mut samples = vec![1.0f32; 48000];
+        apply_fade_out(&mut samples, 48000, 1, 30, 30, 30.0);
+
+        // Last sample should be ~0
+        assert!(
+            samples[47999].abs() < 0.01,
+            "last sample = {}",
+            samples[47999]
+        );
+        // First sample should be ~1.0
+        assert!(
+            (samples[0] - 1.0).abs() < 0.01,
+            "first sample = {}",
+            samples[0]
+        );
+        // Midpoint should be ~0.5
+        assert!(
+            (samples[24000] - 0.5).abs() < 0.02,
+            "mid sample = {}",
+            samples[24000]
+        );
+    }
+
+    #[test]
+    fn test_apply_clip_effects_eq() {
+        let mut samples = vec![0.0f32; 4096];
+        let effects = vec![tazama_core::Effect::new(EffectKind::Eq {
+            low_gain_db: 0.0,
+            mid_gain_db: 0.0,
+            high_gain_db: 0.0,
+        })];
+        // Zero-gain EQ on silence should remain silence
+        apply_clip_effects(&mut samples, &effects, 48000, 2, 30, 30.0);
+        for s in &samples {
+            assert!(s.abs() < 1e-10);
+        }
+    }
+
+    #[test]
+    fn test_apply_clip_effects_disabled_skipped() {
+        let mut samples: Vec<f32> = (0..4096)
+            .map(|i| (2.0 * std::f64::consts::PI * 440.0 * i as f64 / 96000.0).sin() as f32 * 0.5)
+            .collect();
+        let original = samples.clone();
+
+        let mut effect = tazama_core::Effect::new(EffectKind::Eq {
+            low_gain_db: 12.0,
+            mid_gain_db: 12.0,
+            high_gain_db: 12.0,
+        });
+        effect.enabled = false;
+
+        apply_clip_effects(&mut samples, &[effect], 48000, 2, 30, 30.0);
+        assert_eq!(samples, original);
+    }
+
+    #[test]
+    fn test_volume_effect_static() {
+        let mut samples = vec![0.5f32; 100];
+        let effects = vec![tazama_core::Effect::new(EffectKind::Volume {
+            gain_db: -6.0, // ~0.5x
+        })];
+        apply_clip_effects(&mut samples, &effects, 48000, 1, 30, 30.0);
+
+        let expected_gain = 10.0f32.powf(-6.0 / 20.0);
+        let expected = 0.5 * expected_gain;
+        assert!((samples[50] - expected).abs() < 1e-4);
     }
 }

@@ -182,8 +182,8 @@ fn probe_tarang_video(path: &Path) -> Result<MediaInfo, MediaPipelineError> {
     let n = file.read(&mut header)?;
     drop(file);
 
-    let format = tarang_demux::detect_format(&header[..n])
-        .map_err(|e| MediaPipelineError::ProbeFailed {
+    let format =
+        tarang_demux::detect_format(&header[..n]).map_err(|e| MediaPipelineError::ProbeFailed {
             path: path.display().to_string(),
             reason: e.to_string(),
         })?;
@@ -200,10 +200,12 @@ fn probe_tarang_video(path: &Path) -> Result<MediaInfo, MediaPipelineError> {
         }
     };
 
-    let tarang_info = demuxer.probe().map_err(|e| MediaPipelineError::ProbeFailed {
-        path: path.display().to_string(),
-        reason: e.to_string(),
-    })?;
+    let tarang_info = demuxer
+        .probe()
+        .map_err(|e| MediaPipelineError::ProbeFailed {
+            path: path.display().to_string(),
+            reason: e.to_string(),
+        })?;
 
     let container = detect_container(path);
     let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);

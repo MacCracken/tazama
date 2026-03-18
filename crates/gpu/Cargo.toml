@@ -14,3 +14,4 @@ thiserror.workspace = true
 tracing.workspace = true
 bytes.workspace = true
 tokio.workspace = true
+cosmic-text = "0.12"

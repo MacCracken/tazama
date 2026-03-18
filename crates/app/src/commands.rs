@@ -1,9 +1,13 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use base64::Engine;
 use serde::Serialize;
+use tauri::State;
 use tazama_core::{MediaInfo, Project, ProjectSettings};
 use tazama_media::ExportConfig;
+use tazama_storage::AutosaveManager;
+use tokio::sync::Mutex;
 
 #[tauri::command]
 pub async fn new_project(name: String, width: u32, height: u32) -> Result<Project, String> {
@@ -174,6 +178,96 @@ pub async fn export_project(
         },
     );
 
+    Ok(())
+}
+
+// --- Autosave commands ---
+
+#[tauri::command]
+pub async fn start_autosave(
+    autosave: State<'_, Arc<Mutex<AutosaveManager>>>,
+) -> Result<(), String> {
+    let mut mgr = autosave.lock().await;
+    mgr.start();
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn stop_autosave(autosave: State<'_, Arc<Mutex<AutosaveManager>>>) -> Result<(), String> {
+    let mut mgr = autosave.lock().await;
+    mgr.stop();
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn check_autosave_recovery(path: String) -> Result<Option<Project>, String> {
+    let recovered = tazama_storage::autosave::recover(std::path::Path::new(&path)).await;
+    Ok(recovered)
+}
+
+#[tauri::command]
+pub async fn cleanup_autosave(path: String) -> Result<(), String> {
+    tazama_storage::autosave::cleanup(std::path::Path::new(&path)).await;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn notify_autosave(
+    autosave: State<'_, Arc<Mutex<AutosaveManager>>>,
+    project: Project,
+    path: String,
+) -> Result<(), String> {
+    let mgr = autosave.lock().await;
+    mgr.update_project(project, PathBuf::from(path)).await;
+    Ok(())
+}
+
+// --- Recording commands ---
+
+#[tauri::command]
+pub async fn start_recording(sample_rate: u32, channels: u16) -> Result<(), String> {
+    tazama_media::record::start(sample_rate, channels).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn stop_recording() -> Result<String, String> {
+    let path = tazama_media::record::stop().map_err(|e| e.to_string())?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+// --- Proxy commands ---
+
+#[tauri::command]
+pub async fn generate_proxies(
+    project: Project,
+    proxy_dir: String,
+    target_width: u32,
+) -> Result<Vec<String>, String> {
+    tazama_media::init().map_err(|e| e.to_string())?;
+    let mut proxy_paths = Vec::new();
+
+    for track in &project.timeline.tracks {
+        for clip in &track.clips {
+            if let Some(media) = &clip.media {
+                let proxy = tazama_media::proxy::generate_proxy(
+                    std::path::Path::new(&media.path),
+                    std::path::Path::new(&proxy_dir),
+                    target_width,
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+                proxy_paths.push(proxy.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    Ok(proxy_paths)
+}
+
+#[tauri::command]
+pub async fn set_proxy_mode(_enabled: bool) -> Result<(), String> {
+    // Proxy mode toggle - the frontend uses this to decide whether
+    // to use proxy_path or original path for preview
     Ok(())
 }
 

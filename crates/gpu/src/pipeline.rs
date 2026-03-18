@@ -48,6 +48,28 @@ pub struct TransitionPush {
     pub _pad: u32,
 }
 
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct LutPush {
+    pub width: u32,
+    pub height: u32,
+    pub lut_size: u32,
+    pub _pad: u32,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct PipTransformPush {
+    pub base_width: u32,
+    pub base_height: u32,
+    pub overlay_width: u32,
+    pub overlay_height: u32,
+    pub scale_x: f32,
+    pub scale_y: f32,
+    pub translate_x: f32,
+    pub translate_y: f32,
+}
+
 // --- Pipeline types ---
 
 /// A single Vulkan compute pipeline with its layout and descriptor set layout.
@@ -75,6 +97,8 @@ pub struct PipelineCache {
     pub dissolve: ComputePipeline,
     pub wipe: ComputePipeline,
     pub fade: ComputePipeline,
+    pub lut: ComputePipeline,
+    pub transform: ComputePipeline,
     pub descriptor_pool: vk::DescriptorPool,
 }
 
@@ -135,6 +159,20 @@ impl PipelineCache {
             std::mem::size_of::<TransitionPush>() as u32,
         )?;
 
+        let lut = create_pipeline(
+            device,
+            shader::LUT_SPV,
+            3, // in, out, lut_data
+            std::mem::size_of::<LutPush>() as u32,
+        )?;
+
+        let transform = create_pipeline(
+            device,
+            shader::TRANSFORM_SPV,
+            3, // base, overlay, out
+            std::mem::size_of::<PipTransformPush>() as u32,
+        )?;
+
         Ok(Self {
             color_grade,
             crop,
@@ -142,6 +180,8 @@ impl PipelineCache {
             dissolve,
             wipe,
             fade,
+            lut,
+            transform,
             descriptor_pool,
         })
     }
@@ -153,6 +193,8 @@ impl PipelineCache {
         self.dissolve.destroy(device);
         self.wipe.destroy(device);
         self.fade.destroy(device);
+        self.lut.destroy(device);
+        self.transform.destroy(device);
         unsafe {
             device.destroy_descriptor_pool(self.descriptor_pool, None);
         }
@@ -218,4 +260,88 @@ fn create_pipeline(
         layout,
         descriptor_set_layout,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lut_push_size_and_alignment() {
+        assert_eq!(std::mem::size_of::<LutPush>(), 16);
+        assert_eq!(std::mem::align_of::<LutPush>(), 4);
+    }
+
+    #[test]
+    fn lut_push_fields() {
+        let push = LutPush {
+            width: 1920,
+            height: 1080,
+            lut_size: 33,
+            _pad: 0,
+        };
+        assert_eq!(push.width, 1920);
+        assert_eq!(push.height, 1080);
+        assert_eq!(push.lut_size, 33);
+    }
+
+    #[test]
+    fn pip_transform_push_size_and_alignment() {
+        assert_eq!(std::mem::size_of::<PipTransformPush>(), 32);
+        assert_eq!(std::mem::align_of::<PipTransformPush>(), 4);
+    }
+
+    #[test]
+    fn pip_transform_push_fields() {
+        let push = PipTransformPush {
+            base_width: 1920,
+            base_height: 1080,
+            overlay_width: 640,
+            overlay_height: 360,
+            scale_x: 0.5,
+            scale_y: 0.5,
+            translate_x: 100.0,
+            translate_y: 50.0,
+        };
+        assert_eq!(push.base_width, 1920);
+        assert_eq!(push.overlay_width, 640);
+        assert_eq!(push.scale_x, 0.5);
+        assert_eq!(push.translate_x, 100.0);
+    }
+
+    #[test]
+    fn pip_transform_push_bytemuck() {
+        let push = PipTransformPush {
+            base_width: 1920,
+            base_height: 1080,
+            overlay_width: 640,
+            overlay_height: 360,
+            scale_x: 1.0,
+            scale_y: 1.0,
+            translate_x: 0.0,
+            translate_y: 0.0,
+        };
+        let bytes = bytemuck::bytes_of(&push);
+        assert_eq!(bytes.len(), 32);
+    }
+
+    #[test]
+    fn lut_push_bytemuck() {
+        let push = LutPush {
+            width: 1920,
+            height: 1080,
+            lut_size: 17,
+            _pad: 0,
+        };
+        let bytes = bytemuck::bytes_of(&push);
+        assert_eq!(bytes.len(), 16);
+    }
+
+    #[test]
+    fn existing_push_constant_sizes() {
+        assert_eq!(std::mem::size_of::<ColorGradePush>(), 24);
+        assert_eq!(std::mem::size_of::<CompositePush>(), 16);
+        assert_eq!(std::mem::size_of::<CropPush>(), 32);
+        assert_eq!(std::mem::size_of::<TransitionPush>(), 16);
+    }
 }

@@ -1,0 +1,288 @@
+//! Voiceover recording using the default audio input device.
+//!
+//! Uses `cpal` to capture audio from the system's default input device
+//! into a ring buffer, then writes a WAV file on stop.
+
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex, OnceLock};
+
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use tracing::{debug, info};
+
+use crate::error::MediaPipelineError;
+
+/// Global recorder state, protected by a mutex.
+static RECORDER: OnceLock<Mutex<RecorderState>> = OnceLock::new();
+
+fn recorder() -> &'static Mutex<RecorderState> {
+    RECORDER.get_or_init(|| Mutex::new(RecorderState::Idle))
+}
+
+enum RecorderState {
+    Idle,
+    Recording {
+        stream: cpal::Stream,
+        buffer: Arc<Mutex<Vec<f32>>>,
+        sample_rate: u32,
+        channels: u16,
+    },
+}
+
+// cpal::Stream is not Send on all platforms, but we only access it from
+// the thread that calls start/stop in practice. We use OnceLock + Mutex
+// to ensure single-threaded access to the stream.
+unsafe impl Send for RecorderState {}
+
+/// Begin capturing audio from the default input device.
+///
+/// Captured samples are stored in an internal ring buffer as f32.
+/// Call [`stop`] to finish recording and write a WAV file.
+pub fn start(sample_rate: u32, channels: u16) -> Result<(), MediaPipelineError> {
+    let mut state = recorder()
+        .lock()
+        .map_err(|e| MediaPipelineError::Decode(format!("recorder lock poisoned: {e}")))?;
+
+    if matches!(*state, RecorderState::Recording { .. }) {
+        return Err(MediaPipelineError::Decode(
+            "recording already in progress".into(),
+        ));
+    }
+
+    let host = cpal::default_host();
+    let device = host
+        .default_input_device()
+        .ok_or_else(|| MediaPipelineError::Decode("no default input device found".into()))?;
+
+    info!("recording from device: {:?}", device.name());
+
+    let config = cpal::StreamConfig {
+        channels,
+        sample_rate: cpal::SampleRate(sample_rate),
+        buffer_size: cpal::BufferSize::Default,
+    };
+
+    let buffer: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::new()));
+    let buf_clone = Arc::clone(&buffer);
+
+    let stream = device
+        .build_input_stream(
+            &config,
+            move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                if let Ok(mut buf) = buf_clone.lock() {
+                    buf.extend_from_slice(data);
+                }
+            },
+            |err| {
+                tracing::error!("audio input stream error: {err}");
+            },
+            None,
+        )
+        .map_err(|e| MediaPipelineError::Decode(format!("failed to build input stream: {e}")))?;
+
+    stream
+        .play()
+        .map_err(|e| MediaPipelineError::Decode(format!("failed to start recording: {e}")))?;
+
+    debug!("recording started: {sample_rate}Hz, {channels}ch");
+
+    *state = RecorderState::Recording {
+        stream,
+        buffer,
+        sample_rate,
+        channels,
+    };
+
+    Ok(())
+}
+
+/// Stop the current recording and write a WAV file to a temporary directory.
+///
+/// Returns the path to the written WAV file.
+pub fn stop() -> Result<PathBuf, MediaPipelineError> {
+    let mut state = recorder()
+        .lock()
+        .map_err(|e| MediaPipelineError::Decode(format!("recorder lock poisoned: {e}")))?;
+
+    let (buffer, sample_rate, channels) = match std::mem::replace(&mut *state, RecorderState::Idle)
+    {
+        RecorderState::Recording {
+            stream,
+            buffer,
+            sample_rate,
+            channels,
+        } => {
+            // Drop the stream to stop recording
+            drop(stream);
+            (buffer, sample_rate, channels)
+        }
+        RecorderState::Idle => {
+            return Err(MediaPipelineError::Decode(
+                "no recording in progress".into(),
+            ));
+        }
+    };
+
+    let samples = buffer
+        .lock()
+        .map_err(|e| MediaPipelineError::Decode(format!("buffer lock poisoned: {e}")))?;
+
+    if samples.is_empty() {
+        return Err(MediaPipelineError::Decode(
+            "recording buffer is empty".into(),
+        ));
+    }
+
+    info!("recording stopped: {} samples captured", samples.len());
+
+    // Write WAV to temp dir
+    let temp_dir = std::env::temp_dir();
+    let filename = format!(
+        "tazama_voiceover_{}.wav",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+    );
+    let path = temp_dir.join(filename);
+
+    write_wav(&path, &samples, sample_rate, channels)?;
+    info!("voiceover saved to {}", path.display());
+
+    Ok(path)
+}
+
+/// Write a WAV file with a 44-byte header followed by 16-bit PCM samples.
+fn write_wav(
+    path: &std::path::Path,
+    samples: &[f32],
+    sample_rate: u32,
+    channels: u16,
+) -> Result<(), MediaPipelineError> {
+    use std::io::Write;
+
+    let num_samples = samples.len();
+    let bytes_per_sample: u16 = 2; // 16-bit PCM
+    let bits_per_sample: u16 = 16;
+    let byte_rate = sample_rate * channels as u32 * bytes_per_sample as u32;
+    let block_align = channels * bytes_per_sample;
+    let data_size = (num_samples * bytes_per_sample as usize) as u32;
+    let file_size = 36 + data_size;
+
+    let mut file = std::fs::File::create(path)?;
+
+    // RIFF header
+    file.write_all(b"RIFF")?;
+    file.write_all(&file_size.to_le_bytes())?;
+    file.write_all(b"WAVE")?;
+
+    // fmt chunk
+    file.write_all(b"fmt ")?;
+    file.write_all(&16u32.to_le_bytes())?; // chunk size
+    file.write_all(&1u16.to_le_bytes())?; // PCM format
+    file.write_all(&channels.to_le_bytes())?;
+    file.write_all(&sample_rate.to_le_bytes())?;
+    file.write_all(&byte_rate.to_le_bytes())?;
+    file.write_all(&block_align.to_le_bytes())?;
+    file.write_all(&bits_per_sample.to_le_bytes())?;
+
+    // data chunk
+    file.write_all(b"data")?;
+    file.write_all(&data_size.to_le_bytes())?;
+
+    // Convert f32 samples to i16 and write
+    for &sample in samples {
+        let clamped = sample.clamp(-1.0, 1.0);
+        let i16_val = (clamped * 32767.0) as i16;
+        file.write_all(&i16_val.to_le_bytes())?;
+    }
+
+    file.flush()?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn write_wav_creates_valid_file() {
+        let samples: Vec<f32> = (0..4800)
+            .map(|i| (2.0 * std::f64::consts::PI * 440.0 * i as f64 / 48000.0).sin() as f32)
+            .collect();
+
+        let path = std::env::temp_dir().join("tazama_test_wav.wav");
+        write_wav(&path, &samples, 48000, 1).unwrap();
+
+        // Read back and verify header
+        let data = std::fs::read(&path).unwrap();
+        assert_eq!(&data[0..4], b"RIFF");
+        assert_eq!(&data[8..12], b"WAVE");
+        assert_eq!(&data[12..16], b"fmt ");
+        assert_eq!(&data[36..40], b"data");
+
+        // Verify file size
+        let expected_data_size = samples.len() * 2; // 16-bit = 2 bytes per sample
+        let data_size = u32::from_le_bytes([data[40], data[41], data[42], data[43]]) as usize;
+        assert_eq!(data_size, expected_data_size);
+
+        // Total file = 44 header + data
+        assert_eq!(data.len(), 44 + expected_data_size);
+
+        // Verify sample rate
+        let sr = u32::from_le_bytes([data[24], data[25], data[26], data[27]]);
+        assert_eq!(sr, 48000);
+
+        // Verify channels
+        let ch = u16::from_le_bytes([data[22], data[23]]);
+        assert_eq!(ch, 1);
+
+        // Clean up
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn write_wav_stereo() {
+        let samples: Vec<f32> = (0..9600)
+            .map(|i| {
+                let frame = i / 2;
+                (2.0 * std::f64::consts::PI * 440.0 * frame as f64 / 48000.0).sin() as f32
+            })
+            .collect();
+
+        let path = std::env::temp_dir().join("tazama_test_wav_stereo.wav");
+        write_wav(&path, &samples, 48000, 2).unwrap();
+
+        let data = std::fs::read(&path).unwrap();
+        let ch = u16::from_le_bytes([data[22], data[23]]);
+        assert_eq!(ch, 2);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn write_wav_clamps_samples() {
+        let samples = vec![2.0f32, -2.0, 0.5, -0.5];
+        let path = std::env::temp_dir().join("tazama_test_wav_clamp.wav");
+        write_wav(&path, &samples, 48000, 1).unwrap();
+
+        let data = std::fs::read(&path).unwrap();
+        // First sample should be clamped to 32767
+        let s0 = i16::from_le_bytes([data[44], data[45]]);
+        assert_eq!(s0, 32767);
+        // Second sample should be clamped to -32767 (since -1.0 * 32767 = -32767)
+        let s1 = i16::from_le_bytes([data[46], data[47]]);
+        assert!(s1 <= -32767);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn stop_without_start_errors() {
+        // Reset state by replacing with Idle
+        if let Ok(mut state) = recorder().lock() {
+            *state = RecorderState::Idle;
+        }
+        let result = stop();
+        assert!(result.is_err());
+    }
+}

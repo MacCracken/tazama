@@ -21,6 +21,8 @@ pub enum GpuError {
     Allocator(String),
     #[error("vulkan loading failed: {0}")]
     Loading(#[from] ash::LoadingError),
+    #[error("{0}")]
+    Other(String),
 }
 
 /// Vulkan device context — owns instance, device, queues, and memory allocator.

@@ -286,9 +286,7 @@ fn create_tarang_decoder(
 
 /// Find the first video stream index and its codec from tarang MediaInfo.
 #[cfg(feature = "tarang")]
-fn find_video_stream(
-    info: &tarang_core::MediaInfo,
-) -> Option<(usize, tarang_core::VideoCodec)> {
+fn find_video_stream(info: &tarang_core::MediaInfo) -> Option<(usize, tarang_core::VideoCodec)> {
     for (idx, stream) in info.streams.iter().enumerate() {
         if let tarang_core::StreamInfo::Video(vs) = stream {
             return Some((idx, vs.codec));

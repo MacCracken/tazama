@@ -2,7 +2,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::clip::{Clip, ClipId};
 use crate::effect::Effect;
+use crate::keyframe::KeyframeTrack;
 use crate::marker::Marker;
+use crate::multicam::MultiCamGroup;
 use crate::timeline::{Timeline, TimelineError, TrackId, TrackKind};
 
 /// Each variant stores enough state for both `apply()` and `undo()`.
@@ -64,6 +66,33 @@ pub enum EditCommand {
     },
     RemoveMarker {
         marker: Marker,
+    },
+    SetTrackVolume {
+        track_id: TrackId,
+        old_volume: f32,
+        new_volume: f32,
+    },
+    SetTrackPan {
+        track_id: TrackId,
+        old_pan: f32,
+        new_pan: f32,
+    },
+    SetKeyframes {
+        track_id: TrackId,
+        clip_id: ClipId,
+        effect_index: usize,
+        old_tracks: Vec<KeyframeTrack>,
+        new_tracks: Vec<KeyframeTrack>,
+    },
+    CreateMultiCamGroup {
+        group: MultiCamGroup,
+    },
+    SwitchAngle {
+        track_id: TrackId,
+        /// The clip that was on the output track before the switch (for undo).
+        old_clip: Option<Box<Clip>>,
+        /// The new clip placed on the output track.
+        new_clip: Box<Clip>,
     },
 }
 
@@ -160,6 +189,59 @@ impl EditCommand {
             EditCommand::RemoveMarker { marker } => {
                 timeline.remove_marker(marker.id);
                 Ok(())
+            }
+            EditCommand::SetTrackVolume {
+                track_id,
+                new_volume,
+                ..
+            } => {
+                let track = timeline
+                    .track_mut(*track_id)
+                    .ok_or(TimelineError::TrackNotFound(*track_id))?;
+                track.volume = *new_volume;
+                Ok(())
+            }
+            EditCommand::SetTrackPan {
+                track_id, new_pan, ..
+            } => {
+                let track = timeline
+                    .track_mut(*track_id)
+                    .ok_or(TimelineError::TrackNotFound(*track_id))?;
+                track.pan = *new_pan;
+                Ok(())
+            }
+            EditCommand::SetKeyframes {
+                clip_id,
+                effect_index,
+                new_tracks,
+                ..
+            } => {
+                let (_, clip) = timeline
+                    .find_clip_mut(*clip_id)
+                    .ok_or(TimelineError::ClipNotFound(*clip_id))?;
+                if let Some(effect) = clip.effects.get_mut(*effect_index) {
+                    effect.keyframe_tracks = new_tracks.clone();
+                }
+                Ok(())
+            }
+            EditCommand::CreateMultiCamGroup { group } => {
+                timeline.multicam_groups.push(group.clone());
+                Ok(())
+            }
+            EditCommand::SwitchAngle {
+                track_id,
+                new_clip,
+                old_clip,
+                ..
+            } => {
+                let track = timeline
+                    .track_mut(*track_id)
+                    .ok_or(TimelineError::TrackNotFound(*track_id))?;
+                // Remove old clip if present
+                if let Some(old) = old_clip {
+                    track.clips.retain(|c| c.id != old.id);
+                }
+                track.add_clip(*new_clip.clone())
             }
         }
     }
@@ -266,6 +348,59 @@ impl EditCommand {
             }
             EditCommand::RemoveMarker { marker } => {
                 timeline.add_marker(marker.clone());
+                Ok(())
+            }
+            EditCommand::SetTrackVolume {
+                track_id,
+                old_volume,
+                ..
+            } => {
+                let track = timeline
+                    .track_mut(*track_id)
+                    .ok_or(TimelineError::TrackNotFound(*track_id))?;
+                track.volume = *old_volume;
+                Ok(())
+            }
+            EditCommand::SetTrackPan {
+                track_id, old_pan, ..
+            } => {
+                let track = timeline
+                    .track_mut(*track_id)
+                    .ok_or(TimelineError::TrackNotFound(*track_id))?;
+                track.pan = *old_pan;
+                Ok(())
+            }
+            EditCommand::SetKeyframes {
+                clip_id,
+                effect_index,
+                old_tracks,
+                ..
+            } => {
+                let (_, clip) = timeline
+                    .find_clip_mut(*clip_id)
+                    .ok_or(TimelineError::ClipNotFound(*clip_id))?;
+                if let Some(effect) = clip.effects.get_mut(*effect_index) {
+                    effect.keyframe_tracks = old_tracks.clone();
+                }
+                Ok(())
+            }
+            EditCommand::CreateMultiCamGroup { group } => {
+                timeline.multicam_groups.retain(|g| g.id != group.id);
+                Ok(())
+            }
+            EditCommand::SwitchAngle {
+                track_id,
+                old_clip,
+                new_clip,
+                ..
+            } => {
+                let track = timeline
+                    .track_mut(*track_id)
+                    .ok_or(TimelineError::TrackNotFound(*track_id))?;
+                track.clips.retain(|c| c.id != new_clip.id);
+                if let Some(old) = old_clip {
+                    let _ = track.add_clip(*old.clone());
+                }
                 Ok(())
             }
         }

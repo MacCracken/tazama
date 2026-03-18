@@ -168,10 +168,7 @@ fn is_audio_file(path: &Path) -> bool {
 }
 
 #[cfg(feature = "tarang")]
-fn decode_tarang(
-    path: &Path,
-    tx: mpsc::Sender<AudioBuffer>,
-) -> Result<(), MediaPipelineError> {
+fn decode_tarang(path: &Path, tx: mpsc::Sender<AudioBuffer>) -> Result<(), MediaPipelineError> {
     use symphonia::core::audio::SampleBuffer;
     use symphonia::core::codecs::DecoderOptions;
     use symphonia::core::formats::FormatOptions;
@@ -188,7 +185,12 @@ fn decode_tarang(
     }
 
     let probed = symphonia::default::get_probe()
-        .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
+        .format(
+            &hint,
+            mss,
+            &FormatOptions::default(),
+            &MetadataOptions::default(),
+        )
         .map_err(|e| MediaPipelineError::Decode(e.to_string()))?;
 
     let mut format = probed.format;

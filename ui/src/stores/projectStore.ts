@@ -8,6 +8,8 @@ import type {
   Effect,
   Marker,
   MarkerColor,
+  KeyframeTrack,
+  MultiCamGroup,
 } from "../types";
 import * as commands from "../ipc/commands";
 import { useHistoryStore } from "./historyStore";
@@ -38,6 +40,8 @@ interface ProjectState {
   toggleTrackMute: (trackId: string) => void;
   toggleTrackLock: (trackId: string) => void;
   renameTrack: (trackId: string, name: string) => void;
+  setTrackVolume: (trackId: string, volume: number) => void;
+  setTrackPan: (trackId: string, pan: number) => void;
 
   // Clip operations
   addClip: (trackId: string, clip: Clip) => void;
@@ -69,6 +73,21 @@ interface ProjectState {
     clipId: string,
     effectId: string,
   ) => void;
+  setKeyframeTracks: (
+    trackId: string,
+    clipId: string,
+    effectId: string,
+    tracks: KeyframeTrack[],
+  ) => void;
+
+  // Multi-cam operations
+  createMultiCamGroup: (name: string, angles: [string, number][]) => void;
+  removeMultiCamGroup: (groupId: string) => void;
+
+  // Recording
+  isRecording: boolean;
+  startRecording: (sampleRate: number, channels: number) => Promise<void>;
+  stopRecording: () => Promise<string | null>;
 
   // Media assets
   addMediaAsset: (asset: MediaAsset) => void;
@@ -83,6 +102,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   dirty: false,
   recentProjects: [],
   mediaAssets: [],
+  isRecording: false,
 
   createProject: async (name, width, height) => {
     const project = await commands.newProject(name, width, height);
@@ -179,6 +199,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         locked: false,
         solo: false,
         visible: true,
+        volume: 1.0,
+        pan: 0.0,
       };
       p.timeline.tracks.push(track);
     });
@@ -208,6 +230,20 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     get()._mutate((p) => {
       const track = p.timeline.tracks.find((t) => t.id === trackId);
       if (track) track.name = name;
+    });
+  },
+
+  setTrackVolume: (trackId, volume) => {
+    get()._mutate((p) => {
+      const track = p.timeline.tracks.find((t) => t.id === trackId);
+      if (track) track.volume = volume;
+    });
+  },
+
+  setTrackPan: (trackId, pan) => {
+    get()._mutate((p) => {
+      const track = p.timeline.tracks.find((t) => t.id === trackId);
+      if (track) track.pan = pan;
     });
   },
 
@@ -327,6 +363,47 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         clip.effects = clip.effects.filter((e) => e.id !== effectId);
       }
     });
+  },
+
+  setKeyframeTracks: (trackId, clipId, effectId, tracks) => {
+    get()._mutate((p) => {
+      const track = p.timeline.tracks.find((t) => t.id === trackId);
+      if (!track) return;
+      const clip = track.clips.find((c) => c.id === clipId);
+      if (!clip) return;
+      const effect = clip.effects.find((e) => e.id === effectId);
+      if (effect) effect.keyframe_tracks = tracks;
+    });
+  },
+
+  createMultiCamGroup: (name, angles) => {
+    get()._mutate((p) => {
+      const group: MultiCamGroup = {
+        id: crypto.randomUUID(),
+        name,
+        angles,
+      };
+      p.timeline.multicam_groups.push(group);
+    });
+  },
+
+  removeMultiCamGroup: (groupId) => {
+    get()._mutate((p) => {
+      p.timeline.multicam_groups = p.timeline.multicam_groups.filter(
+        (g) => g.id !== groupId,
+      );
+    });
+  },
+
+  startRecording: async (sampleRate, channels) => {
+    await commands.startRecording(sampleRate, channels);
+    set({ isRecording: true });
+  },
+
+  stopRecording: async () => {
+    const path = await commands.stopRecording();
+    set({ isRecording: false });
+    return path;
   },
 
   addMediaAsset: (asset) => {

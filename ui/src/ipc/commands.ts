@@ -56,3 +56,58 @@ export async function renderPreviewFrame(
     frameIndex,
   });
 }
+
+// Autosave commands
+export async function startAutosave(): Promise<void> {
+  return invoke<void>("start_autosave");
+}
+
+export async function stopAutosave(): Promise<void> {
+  return invoke<void>("stop_autosave");
+}
+
+export async function checkAutosaveRecovery(
+  path: string,
+): Promise<Project | null> {
+  return invoke<Project | null>("check_autosave_recovery", { path });
+}
+
+export async function cleanupAutosave(path: string): Promise<void> {
+  return invoke<void>("cleanup_autosave", { path });
+}
+
+export async function notifyAutosave(
+  project: Project,
+  path: string,
+): Promise<void> {
+  return invoke<void>("notify_autosave", { project, path });
+}
+
+// Recording commands
+export async function startRecording(
+  sampleRate: number,
+  channels: number,
+): Promise<void> {
+  return invoke<void>("start_recording", { sampleRate, channels });
+}
+
+export async function stopRecording(): Promise<string> {
+  return invoke<string>("stop_recording");
+}
+
+// Proxy commands
+export async function generateProxies(
+  project: Project,
+  proxyDir: string,
+  targetWidth: number,
+): Promise<string[]> {
+  return invoke<string[]>("generate_proxies", {
+    project,
+    proxyDir,
+    targetWidth,
+  });
+}
+
+export async function setProxyMode(enabled: boolean): Promise<void> {
+  return invoke<void>("set_proxy_mode", { enabled });
+}

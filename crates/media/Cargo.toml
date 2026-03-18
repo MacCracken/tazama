@@ -18,16 +18,19 @@ bytes.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 cpal.workspace = true
-tarang-core = { workspace = true, optional = true }
-tarang-audio = { workspace = true, optional = true }
-tarang-demux = { workspace = true, optional = true }
-tarang-video = { workspace = true, optional = true }
-tarang-ai = { workspace = true, optional = true }
+rustfft = "6"
+tarang-core = { path = "../../../tarang/crates/tarang-core", optional = true }
+tarang-audio = { path = "../../../tarang/crates/tarang-audio", optional = true }
+tarang-demux = { path = "../../../tarang/crates/tarang-demux", optional = true }
+tarang-video = { path = "../../../tarang/crates/tarang-video", features = ["openh264", "vpx", "dav1d"], optional = true }
+tarang-ai = { path = "../../../tarang/crates/tarang-ai", optional = true }
 symphonia = { version = "0.5", features = ["all"], optional = true }
+wasmtime = { version = "29", optional = true }
 
 [features]
 default = []
 tarang = ["dep:tarang-core", "dep:tarang-audio", "dep:tarang-demux", "dep:tarang-video", "dep:tarang-ai", "dep:symphonia"]
+plugins = ["dep:wasmtime"]
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

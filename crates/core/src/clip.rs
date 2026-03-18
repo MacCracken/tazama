@@ -36,6 +36,9 @@ pub struct MediaRef {
     pub sample_rate: Option<u32>,
     pub channels: Option<u16>,
     pub info: Option<crate::media_info::MediaInfo>,
+    /// Path to a lower-resolution proxy file for preview playback.
+    #[serde(default)]
+    pub proxy_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -157,6 +160,7 @@ mod tests {
             sample_rate: None,
             channels: None,
             info: None,
+            proxy_path: None,
         }
     }
 

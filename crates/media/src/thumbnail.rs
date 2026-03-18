@@ -23,7 +23,9 @@ pub async fn generate_thumbnails(
         match generate_thumbnails_tarang(path, spec).await {
             Ok(thumbs) => return Ok(thumbs),
             Err(e) => {
-                tracing::warn!("tarang thumbnail generation failed, falling back to GStreamer: {e}");
+                tracing::warn!(
+                    "tarang thumbnail generation failed, falling back to GStreamer: {e}"
+                );
             }
         }
     }
@@ -189,9 +191,7 @@ fn generate_thumbnails_tarang_sync(
 }
 
 #[cfg(feature = "tarang")]
-fn create_demuxer(
-    path: &Path,
-) -> Result<Box<dyn tarang_demux::Demuxer>, MediaPipelineError> {
+fn create_demuxer(path: &Path) -> Result<Box<dyn tarang_demux::Demuxer>, MediaPipelineError> {
     use std::io::Read;
 
     let mut file = std::fs::File::open(path)?;
@@ -217,9 +217,7 @@ fn create_demuxer(
 }
 
 #[cfg(feature = "tarang")]
-fn find_video_stream(
-    info: &tarang_core::MediaInfo,
-) -> Option<(usize, tarang_core::VideoCodec)> {
+fn find_video_stream(info: &tarang_core::MediaInfo) -> Option<(usize, tarang_core::VideoCodec)> {
     for (idx, stream) in info.streams.iter().enumerate() {
         if let tarang_core::StreamInfo::Video(vs) = stream {
             return Some((idx, vs.codec));
