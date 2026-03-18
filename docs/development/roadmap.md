@@ -123,3 +123,4 @@ High priority. The post-v1 feature push added significant surface area across al
 - Project autosave (periodic save with crash recovery)
 - Hardware encode (VAAPI / NVENC for GPU-accelerated export)
 - Format expansion (ProRes, DNxHR, MKV, GIF export)
+- Windows release builds (MSVC toolchain, Vulkan on Windows, GStreamer MSVC binaries, Tauri Windows target, MSI/NSIS installer, CI cross-compilation)
