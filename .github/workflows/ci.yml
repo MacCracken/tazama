@@ -136,7 +136,7 @@ jobs:
         run: |
           cargo tarpaulin --workspace \
             --exclude tazama \
-            --fail-under 37 \
+            --fail-under 40 \
             --timeout 300 \
             --out xml \
             --skip-clean

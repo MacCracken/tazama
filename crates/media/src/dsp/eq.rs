@@ -249,4 +249,57 @@ mod tests {
 
         assert!(boosted_energy > original_energy * 1.5);
     }
+
+    #[test]
+    fn mono_mid_boost() {
+        // Generate a 1 kHz tone (center of mid band) at 48 kHz, mono
+        let sample_rate = 48000u32;
+        let freq = 1000.0;
+        let num_frames = 4096;
+        let mut samples: Vec<f32> = Vec::with_capacity(num_frames);
+        for i in 0..num_frames {
+            let v = (2.0 * std::f64::consts::PI * freq * i as f64 / sample_rate as f64).sin()
+                as f32
+                * 0.5;
+            samples.push(v);
+        }
+
+        let original_energy: f64 = samples.iter().map(|s| (*s as f64) * (*s as f64)).sum();
+        apply_eq(&mut samples, sample_rate, 1, 0.0, 12.0, 0.0);
+        let boosted_energy: f64 = samples.iter().map(|s| (*s as f64) * (*s as f64)).sum();
+
+        assert!(
+            boosted_energy > original_energy * 1.5,
+            "mid boost should increase energy of 1 kHz tone: orig={original_energy}, boosted={boosted_energy}"
+        );
+    }
+
+    #[test]
+    fn zero_gain_all_bands_is_exact_passthrough() {
+        // Verify that zero gain returns exactly the same samples (early return path)
+        let original: Vec<f32> = (0..2048).map(|i| (i as f32 * 0.007).sin()).collect();
+        let mut processed = original.clone();
+        apply_eq(&mut processed, 44100, 1, 0.0, 0.0, 0.0);
+        // Should be bitwise identical due to early return
+        for (o, p) in original.iter().zip(processed.iter()) {
+            assert_eq!(o.to_bits(), p.to_bits());
+        }
+    }
+
+    #[test]
+    fn zero_channels_no_panic() {
+        let mut samples = vec![0.5f32; 100];
+        let original = samples.clone();
+        apply_eq(&mut samples, 48000, 0, 6.0, 3.0, -3.0);
+        // Should return early without modifying
+        assert_eq!(samples, original);
+    }
+
+    #[test]
+    fn zero_sample_rate_no_panic() {
+        let mut samples = vec![0.5f32; 100];
+        let original = samples.clone();
+        apply_eq(&mut samples, 0, 2, 6.0, 3.0, -3.0);
+        assert_eq!(samples, original);
+    }
 }

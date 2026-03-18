@@ -95,4 +95,55 @@ mod tests {
         let g2 = MultiCamGroupId::new();
         assert_ne!(g1, g2);
     }
+
+    #[test]
+    fn multicam_group_serde_multiple_angles() {
+        let mut group = MultiCamGroup::new("multi-angle");
+        let t1 = TrackId::new();
+        let t2 = TrackId::new();
+        let t3 = TrackId::new();
+        group.add_angle(t1, 0);
+        group.add_angle(t2, -10);
+        group.add_angle(t3, 5);
+
+        let json = serde_json::to_string(&group).unwrap();
+        let back: MultiCamGroup = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.id, group.id);
+        assert_eq!(back.name, "multi-angle");
+        assert_eq!(back.angles.len(), 3);
+        assert_eq!(back.angles[0], (t1, 0));
+        assert_eq!(back.angles[1], (t2, -10));
+        assert_eq!(back.angles[2], (t3, 5));
+    }
+
+    #[test]
+    fn multicam_group_angle_at_out_of_bounds() {
+        let group = MultiCamGroup::new("empty");
+        assert_eq!(group.angle_at(0), None);
+        assert_eq!(group.angle_at(100), None);
+        assert_eq!(group.angle_at(usize::MAX), None);
+    }
+
+    #[test]
+    fn multicam_group_angle_at_various_indices() {
+        let mut group = MultiCamGroup::new("test");
+        let t1 = TrackId::new();
+        let t2 = TrackId::new();
+        let t3 = TrackId::new();
+        group.add_angle(t1, 0);
+        group.add_angle(t2, -5);
+        group.add_angle(t3, 10);
+
+        assert_eq!(group.angle_at(0), Some((t1, 0)));
+        assert_eq!(group.angle_at(1), Some((t2, -5)));
+        assert_eq!(group.angle_at(2), Some((t3, 10)));
+        assert_eq!(group.angle_at(3), None);
+    }
+
+    #[test]
+    fn multicam_group_id_default() {
+        let id = MultiCamGroupId::default();
+        // default() should produce a valid non-nil UUID
+        assert_ne!(id.0, uuid::Uuid::nil());
+    }
 }

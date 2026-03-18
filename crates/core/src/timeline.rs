@@ -833,4 +833,61 @@ mod tests {
         assert!(timeline.track_mut(id).is_some());
         assert!(timeline.track(TrackId::new()).is_none());
     }
+
+    #[test]
+    fn track_new_has_default_volume_and_pan() {
+        let track = Track::new("V1", TrackKind::Video);
+        assert!((track.volume - 1.0).abs() < 1e-6);
+        assert!((track.pan - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn timeline_new_has_empty_multicam_groups() {
+        let timeline = Timeline::new();
+        assert!(timeline.multicam_groups.is_empty());
+    }
+
+    #[test]
+    fn timeline_serde_backward_compat_without_volume_pan_multicam() {
+        // Simulate old JSON format without volume, pan, or multicam_groups fields
+        let json = r#"{
+            "tracks": [{
+                "id": "00000000-0000-0000-0000-000000000001",
+                "name": "V1",
+                "kind": "Video",
+                "clips": [],
+                "muted": false,
+                "locked": false,
+                "solo": false,
+                "visible": true
+            }],
+            "markers": []
+        }"#;
+        let timeline: Timeline = serde_json::from_str(json).unwrap();
+        assert_eq!(timeline.tracks.len(), 1);
+        assert_eq!(timeline.tracks[0].name, "V1");
+        // volume should default to 1.0
+        assert!((timeline.tracks[0].volume - 1.0).abs() < 1e-6);
+        // pan should default to 0.0
+        assert!((timeline.tracks[0].pan - 0.0).abs() < 1e-6);
+        // multicam_groups should default to empty
+        assert!(timeline.multicam_groups.is_empty());
+    }
+
+    #[test]
+    fn timeline_serde_round_trip_with_multicam() {
+        let mut timeline = Timeline::new();
+        let track = Track::new("V1", TrackKind::Video);
+        let track_id = track.id;
+        timeline.add_track(track);
+
+        let mut group = crate::multicam::MultiCamGroup::new("concert");
+        group.add_angle(track_id, 0);
+        timeline.multicam_groups.push(group);
+
+        let json = serde_json::to_string(&timeline).unwrap();
+        let back: Timeline = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.multicam_groups.len(), 1);
+        assert_eq!(back.multicam_groups[0].name, "concert");
+    }
 }

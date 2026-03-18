@@ -345,4 +345,83 @@ mod tests {
         assert_eq!(back.parameter, "brightness");
         assert_eq!(back.keyframes.len(), 2);
     }
+
+    #[test]
+    fn two_keyframes_at_same_frame() {
+        let mut track = KeyframeTrack::new("test");
+        track.add_keyframe(Keyframe::new(10, 1.0, Interpolation::Linear));
+        track.add_keyframe(Keyframe::new(10, 2.0, Interpolation::Linear));
+        // Both keyframes should be present (sort is stable by frame)
+        assert_eq!(track.keyframes.len(), 2);
+        assert_eq!(track.keyframes[0].frame, 10);
+        assert_eq!(track.keyframes[1].frame, 10);
+        // Evaluate at frame 10 should return one of them (binary_search finds exact match)
+        let v = evaluate(&track, 10).unwrap();
+        assert!(v == 1.0 || v == 2.0);
+    }
+
+    #[test]
+    fn integrated_speed_single_keyframe() {
+        // Single keyframe at frame 5 with speed 3.0
+        let track = linear_track(vec![(5, 3.0)]);
+        // Before, at, and after the keyframe should all evaluate to 3.0
+        let result = integrated_speed(&track, 0, 10);
+        // 10 frames * speed 3.0 = 30.0
+        assert!((result - 30.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn bezier_cubic_extreme_tangents() {
+        let mut track = KeyframeTrack::new("test");
+        track.add_keyframe(Keyframe::new(
+            0,
+            0.0,
+            Interpolation::BezierCubic {
+                in_tangent: (0.0, 0.0),
+                out_tangent: (0.5, 100.0), // extreme overshoot
+            },
+        ));
+        track.add_keyframe(Keyframe::new(
+            100,
+            1.0,
+            Interpolation::BezierCubic {
+                in_tangent: (-0.5, -100.0), // extreme undershoot
+                out_tangent: (0.0, 0.0),
+            },
+        ));
+
+        // Endpoints should still be exact
+        assert!((evaluate(&track, 0).unwrap() - 0.0).abs() < 1e-6);
+        assert!((evaluate(&track, 100).unwrap() - 1.0).abs() < 1e-6);
+
+        // Midpoint may overshoot/undershoot significantly with extreme tangents
+        let mid = evaluate(&track, 50).unwrap();
+        // Just verify it produces a finite value
+        assert!(mid.is_finite());
+    }
+
+    #[test]
+    fn bezier_cubic_zero_tangents_behaves_like_linear() {
+        let mut track = KeyframeTrack::new("test");
+        track.add_keyframe(Keyframe::new(
+            0,
+            0.0,
+            Interpolation::BezierCubic {
+                in_tangent: (0.0, 0.0),
+                out_tangent: (0.0, 0.0),
+            },
+        ));
+        track.add_keyframe(Keyframe::new(
+            100,
+            1.0,
+            Interpolation::BezierCubic {
+                in_tangent: (0.0, 0.0),
+                out_tangent: (0.0, 0.0),
+            },
+        ));
+
+        // With zero tangents, P1=P0 and P2=P3, so it should behave similarly to linear
+        let v = evaluate(&track, 50).unwrap();
+        assert!((v - 0.5).abs() < 0.1, "zero tangent bezier mid={v}");
+    }
 }

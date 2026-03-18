@@ -264,4 +264,120 @@ LUT_3D_SIZE 2
         assert_eq!(cloned.size, lut.size);
         assert_eq!(cloned.data.len(), lut.data.len());
     }
+
+    #[test]
+    fn parse_only_comments_no_data() {
+        let content = "\
+# This is just a comment file
+# No actual LUT data
+";
+        let err = parse_cube(content).unwrap_err();
+        assert!(err.contains("missing LUT_3D_SIZE"));
+    }
+
+    #[test]
+    fn parse_title_without_quotes() {
+        let content = "\
+TITLE My Custom LUT
+LUT_3D_SIZE 2
+0.0 0.0 0.0
+1.0 0.0 0.0
+0.0 1.0 0.0
+1.0 1.0 0.0
+0.0 0.0 1.0
+1.0 0.0 1.0
+0.0 1.0 1.0
+1.0 1.0 1.0
+";
+        let lut = parse_cube(content).unwrap();
+        assert_eq!(lut.size, 2);
+        assert_eq!(lut.data.len(), 8);
+    }
+
+    #[test]
+    fn parse_comments_between_data_lines() {
+        let content = "\
+LUT_3D_SIZE 2
+# First row of data
+0.0 0.0 0.0
+1.0 0.0 0.0
+# Second group
+0.0 1.0 0.0
+1.0 1.0 0.0
+# Third group
+0.0 0.0 1.0
+1.0 0.0 1.0
+0.0 1.0 1.0
+1.0 1.0 1.0
+";
+        let lut = parse_cube(content).unwrap();
+        assert_eq!(lut.size, 2);
+        assert_eq!(lut.data.len(), 8);
+    }
+
+    #[test]
+    fn parse_invalid_size_value() {
+        let content = "LUT_3D_SIZE abc\n";
+        let err = parse_cube(content).unwrap_err();
+        assert!(err.contains("invalid LUT_3D_SIZE value"));
+    }
+
+    #[test]
+    fn parse_size_missing_value() {
+        let content = "LUT_3D_SIZE\n";
+        let err = parse_cube(content).unwrap_err();
+        assert!(err.contains("LUT_3D_SIZE missing value"));
+    }
+
+    #[test]
+    fn parse_invalid_g_value() {
+        let content = "\
+LUT_3D_SIZE 2
+0.0 0.0 0.0
+0.0 xyz 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+";
+        let err = parse_cube(content).unwrap_err();
+        assert!(err.contains("invalid G value"));
+    }
+
+    #[test]
+    fn parse_invalid_b_value() {
+        let content = "\
+LUT_3D_SIZE 2
+0.0 0.0 0.0
+0.0 0.0 xyz
+0.0 0.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+";
+        let err = parse_cube(content).unwrap_err();
+        assert!(err.contains("invalid B value"));
+    }
+
+    #[test]
+    fn parse_size_one_out_of_range() {
+        let content = "LUT_3D_SIZE 1\n";
+        let err = parse_cube(content).unwrap_err();
+        assert!(err.contains("out of range"));
+    }
+
+    #[test]
+    fn parse_size_boundary_valid() {
+        // Size 2 is the minimum valid size
+        let mut content = String::from("LUT_3D_SIZE 2\n");
+        for _ in 0..8 {
+            content.push_str("0.5 0.5 0.5\n");
+        }
+        let lut = parse_cube(&content).unwrap();
+        assert_eq!(lut.size, 2);
+    }
 }

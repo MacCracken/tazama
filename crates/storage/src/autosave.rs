@@ -242,4 +242,65 @@ mod tests {
         let mgr = AutosaveManager::new(30);
         assert_eq!(mgr.interval_secs, 30);
     }
+
+    #[test]
+    fn autosave_path_nested_directories() {
+        let path = PathBuf::from("/home/user/projects/video/my-project.tazama");
+        let result = autosave_path_for(&path);
+        assert_eq!(
+            result,
+            PathBuf::from("/home/user/projects/video/my-project.tazama.autosave")
+        );
+    }
+
+    #[test]
+    fn autosave_path_double_extension() {
+        let path = PathBuf::from("/tmp/project.backup.tazama");
+        let result = autosave_path_for(&path);
+        assert_eq!(
+            result,
+            PathBuf::from("/tmp/project.backup.tazama.autosave")
+        );
+    }
+
+    #[tokio::test]
+    async fn save_autosave_creates_file() {
+        let dir = std::env::temp_dir().join("tazama-autosave-test-create");
+        let _ = tokio::fs::create_dir_all(&dir).await;
+        let autosave_file = dir.join("test.tazama.autosave");
+
+        let project = Project::new("save test", ProjectSettings::default());
+        save_autosave(&project, &autosave_file).await.unwrap();
+
+        assert!(autosave_file.exists());
+
+        // Verify contents are valid JSON
+        let data = tokio::fs::read_to_string(&autosave_file).await.unwrap();
+        let recovered: Project = serde_json::from_str(&data).unwrap();
+        assert_eq!(recovered.name, "save test");
+        assert_eq!(recovered.id, project.id);
+
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    #[tokio::test]
+    async fn save_autosave_with_timeline_data() {
+        let dir = std::env::temp_dir().join("tazama-autosave-test-timeline");
+        let _ = tokio::fs::create_dir_all(&dir).await;
+        let autosave_file = dir.join("timeline.tazama.autosave");
+
+        let mut project = Project::new("timeline test", ProjectSettings::default());
+        // Add a track to the timeline
+        let track = tazama_core::timeline::Track::new("V1", tazama_core::timeline::TrackKind::Video);
+        project.timeline.add_track(track);
+
+        save_autosave(&project, &autosave_file).await.unwrap();
+
+        let data = tokio::fs::read_to_string(&autosave_file).await.unwrap();
+        let recovered: Project = serde_json::from_str(&data).unwrap();
+        assert_eq!(recovered.timeline.tracks.len(), 1);
+        assert_eq!(recovered.timeline.tracks[0].name, "V1");
+
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
 }

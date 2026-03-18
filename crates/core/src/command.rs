@@ -865,4 +865,135 @@ mod tests {
             .unwrap();
         assert!(!history.can_redo());
     }
+
+    #[test]
+    fn set_track_volume_apply_and_undo() {
+        let (mut timeline, mut history) = setup();
+        let track_id = timeline.tracks[0].id;
+        assert_eq!(timeline.tracks[0].volume, 1.0);
+
+        let cmd = EditCommand::SetTrackVolume {
+            track_id,
+            old_volume: 1.0,
+            new_volume: 0.5,
+        };
+        history.execute(cmd, &mut timeline).unwrap();
+        assert!((timeline.tracks[0].volume - 0.5).abs() < 1e-6);
+
+        history.undo(&mut timeline).unwrap();
+        assert!((timeline.tracks[0].volume - 1.0).abs() < 1e-6);
+
+        history.redo(&mut timeline).unwrap();
+        assert!((timeline.tracks[0].volume - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn set_track_pan_apply_and_undo() {
+        let (mut timeline, mut history) = setup();
+        let track_id = timeline.tracks[0].id;
+        assert_eq!(timeline.tracks[0].pan, 0.0);
+
+        let cmd = EditCommand::SetTrackPan {
+            track_id,
+            old_pan: 0.0,
+            new_pan: -0.75,
+        };
+        history.execute(cmd, &mut timeline).unwrap();
+        assert!((timeline.tracks[0].pan - (-0.75)).abs() < 1e-6);
+
+        history.undo(&mut timeline).unwrap();
+        assert!((timeline.tracks[0].pan - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn set_keyframes_apply_and_undo() {
+        let (mut timeline, mut history) = setup();
+        let track_id = timeline.tracks[0].id;
+        let clip = Clip::new("clip1", ClipKind::Video, 0, 30);
+        let clip_id = clip.id;
+        history
+            .execute(EditCommand::AddClip { track_id, clip }, &mut timeline)
+            .unwrap();
+
+        // Apply an effect first so we can set keyframes on it
+        let effect = crate::effect::Effect::new(crate::effect::EffectKind::Speed { factor: 1.0 });
+        history
+            .execute(
+                EditCommand::ApplyEffect {
+                    track_id,
+                    clip_id,
+                    effect,
+                },
+                &mut timeline,
+            )
+            .unwrap();
+
+        let old_tracks = vec![];
+        let mut new_track = crate::keyframe::KeyframeTrack::new("speed");
+        new_track.add_keyframe(crate::keyframe::Keyframe::new(
+            0,
+            1.0,
+            crate::keyframe::Interpolation::Linear,
+        ));
+        new_track.add_keyframe(crate::keyframe::Keyframe::new(
+            30,
+            2.0,
+            crate::keyframe::Interpolation::Linear,
+        ));
+        let new_tracks = vec![new_track];
+
+        let cmd = EditCommand::SetKeyframes {
+            track_id,
+            clip_id,
+            effect_index: 0,
+            old_tracks: old_tracks.clone(),
+            new_tracks: new_tracks.clone(),
+        };
+        history.execute(cmd, &mut timeline).unwrap();
+        assert_eq!(
+            timeline.tracks[0].clips[0].effects[0]
+                .keyframe_tracks
+                .len(),
+            1
+        );
+        assert_eq!(
+            timeline.tracks[0].clips[0].effects[0].keyframe_tracks[0]
+                .keyframes
+                .len(),
+            2
+        );
+
+        history.undo(&mut timeline).unwrap();
+        assert_eq!(
+            timeline.tracks[0].clips[0].effects[0]
+                .keyframe_tracks
+                .len(),
+            0
+        );
+    }
+
+    #[test]
+    fn create_multicam_group_apply_and_undo() {
+        let (mut timeline, mut history) = setup();
+        assert!(timeline.multicam_groups.is_empty());
+
+        let mut group = crate::multicam::MultiCamGroup::new("Concert");
+        let track_id = timeline.tracks[0].id;
+        group.add_angle(track_id, 0);
+        let group_id = group.id;
+
+        let cmd = EditCommand::CreateMultiCamGroup {
+            group: group.clone(),
+        };
+        history.execute(cmd, &mut timeline).unwrap();
+        assert_eq!(timeline.multicam_groups.len(), 1);
+        assert_eq!(timeline.multicam_groups[0].name, "Concert");
+
+        history.undo(&mut timeline).unwrap();
+        assert!(timeline.multicam_groups.is_empty());
+
+        history.redo(&mut timeline).unwrap();
+        assert_eq!(timeline.multicam_groups.len(), 1);
+        assert_eq!(timeline.multicam_groups[0].id, group_id);
+    }
 }

@@ -189,4 +189,66 @@ mod tests {
         let mut samples: Vec<f32> = Vec::new();
         apply_compressor(&mut samples, 48000, 2, -20.0, 4.0, 10.0, 100.0);
     }
+
+    #[test]
+    fn signal_below_threshold_no_compression() {
+        // Signal at -40 dB (0.01 linear), threshold at -10 dB (0.316 linear)
+        let amplitude = 0.01f32;
+        let mut samples: Vec<f32> = (0..4096)
+            .map(|i| {
+                let v = (2.0 * std::f64::consts::PI * 440.0 * i as f64 / 96000.0).sin() as f32;
+                v * amplitude
+            })
+            .collect();
+        let original = samples.clone();
+        apply_compressor(&mut samples, 48000, 1, -10.0, 4.0, 10.0, 100.0);
+
+        // Energy should be essentially the same since signal is well below threshold
+        let orig_energy: f64 = original.iter().map(|s| (*s as f64).powi(2)).sum();
+        let comp_energy: f64 = samples.iter().map(|s| (*s as f64).powi(2)).sum();
+        let ratio = comp_energy / orig_energy;
+        assert!(
+            ratio > 0.95,
+            "signal below threshold should be unaffected, ratio={ratio}"
+        );
+    }
+
+    #[test]
+    fn extreme_ratio_compresses_heavily() {
+        let amplitude = 0.9f32;
+        let mut samples: Vec<f32> = (0..4096)
+            .map(|i| {
+                let v = (2.0 * std::f64::consts::PI * 440.0 * i as f64 / 96000.0).sin() as f32;
+                v * amplitude
+            })
+            .collect();
+        let original_energy: f64 = samples.iter().map(|s| (*s as f64).powi(2)).sum();
+
+        // Ratio of 100:1 is effectively a limiter
+        apply_compressor(&mut samples, 48000, 1, -20.0, 100.0, 1.0, 50.0);
+        let compressed_energy: f64 = samples.iter().map(|s| (*s as f64).powi(2)).sum();
+
+        assert!(
+            compressed_energy < original_energy * 0.5,
+            "extreme ratio should heavily compress: orig={original_energy}, comp={compressed_energy}"
+        );
+    }
+
+    #[test]
+    fn zero_attack_instant_response() {
+        let amplitude = 0.9f32;
+        let mut samples: Vec<f32> = (0..4096)
+            .map(|i| {
+                let v = (2.0 * std::f64::consts::PI * 440.0 * i as f64 / 96000.0).sin() as f32;
+                v * amplitude
+            })
+            .collect();
+        let original_energy: f64 = samples.iter().map(|s| (*s as f64).powi(2)).sum();
+
+        apply_compressor(&mut samples, 48000, 1, -20.0, 4.0, 0.0, 50.0);
+        let compressed_energy: f64 = samples.iter().map(|s| (*s as f64).powi(2)).sum();
+
+        // Should still compress with zero attack
+        assert!(compressed_energy < original_energy * 0.8);
+    }
 }
