@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026.3.18-1
+## 2026.3.18-2
 
 ### Export Audio Codec Selection
 - `ExportAudioCodec` enum (Aac, Opus, Flac) — users can now choose audio codec for export
@@ -10,6 +10,8 @@
 ### Dependency Updates
 - Tarang bumped to 2026.3.18 (FLAC compression with Levinson-Durbin LPC, backlog error fixes)
 - OS recipe (`tazama.toml`) now declares `tarang` as runtime + build dependency
+
+## 2026.3.18-1
 
 ### Post-v1 Non-AI Features
 - Keyframe animation engine with linear, hold, and bezier cubic interpolation
