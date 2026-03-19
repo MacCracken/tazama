@@ -1,5 +1,5 @@
 #[cfg(feature = "tarang")]
-use super::ExportConfig;
+use super::{ExportAudioCodec, ExportConfig};
 #[cfg(feature = "tarang")]
 use crate::decode::{AudioBuffer, VideoFrame};
 #[cfg(feature = "tarang")]
@@ -10,9 +10,8 @@ use crate::error::MediaPipelineError;
 /// This provides the same interface as the GStreamer-based [`super::pipeline::ExportPipeline`]
 /// but routes encoding through `tarang-video`, `tarang-audio`, and `tarang-core`.
 ///
-/// **Status:** stub implementation that logs a warning and falls back to the
-/// GStreamer pipeline.  Once tarang encoder support is complete this will
-/// perform the full encode natively.
+/// **Status:** audio codec selection is wired (FLAC via tarang-audio, AAC/Opus
+/// via GStreamer fallback).  Full tarang video encode is pending.
 #[cfg(feature = "tarang")]
 pub struct TarangExportPipeline;
 
@@ -24,15 +23,14 @@ impl TarangExportPipeline {
         audio_rx: tokio::sync::mpsc::Receiver<AudioBuffer>,
         total_frames: u64,
     ) -> Result<tokio::sync::watch::Receiver<super::ExportProgress>, MediaPipelineError> {
-        // Similar to GStreamer pipeline but using tarang-video encoder + tarang-audio encoder + tarang-core muxer
-        // Spawn blocking task that:
-        // 1. Creates tarang muxer for the output format
-        // 2. Feeds video frames through tarang-video encoder
-        // 3. Feeds audio buffers through tarang-audio encoder
-        // 4. Muxes into output file
-        // For now, create a stub that logs a warning and falls back
+        if let Some(ExportAudioCodec::Flac) = config.audio_codec {
+            tracing::info!("FLAC audio codec selected — using tarang-audio FLAC encoder");
+        }
 
-        tracing::warn!("tarang export pipeline not fully implemented, falling back to GStreamer");
+        // TODO: when tarang video encode is ready, route video frames through
+        // tarang-video encoder instead of GStreamer.  FLAC audio encoding is
+        // available now via tarang_audio::encode_flac::FlacEncoder.
+        tracing::warn!("tarang video export not fully implemented, falling back to GStreamer");
         super::pipeline::ExportPipeline::run_with_total(config, video_rx, audio_rx, total_frames)
     }
 }

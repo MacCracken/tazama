@@ -19,6 +19,14 @@ pub enum ExportFormat {
     Gif,
 }
 
+/// Audio codec selection for export.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ExportAudioCodec {
+    Aac,
+    Opus,
+    Flac,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExportConfig {
     pub output_path: PathBuf,
@@ -28,6 +36,8 @@ pub struct ExportConfig {
     pub frame_rate: (u32, u32),
     pub sample_rate: u32,
     pub channels: u16,
+    #[serde(default)]
+    pub audio_codec: Option<ExportAudioCodec>,
     #[serde(default)]
     pub hardware_accel: bool,
 }
@@ -151,6 +161,7 @@ mod tests {
             frame_rate: (30, 1),
             sample_rate: 48000,
             channels: 2,
+            audio_codec: None,
             hardware_accel: true,
         };
         let json = serde_json::to_string(&config).unwrap();
@@ -191,6 +202,7 @@ mod tests {
                 frame_rate: (24, 1),
                 sample_rate: 44100,
                 channels: 2,
+                audio_codec: None,
                 hardware_accel: false,
             };
             let json = serde_json::to_string(&config).unwrap();

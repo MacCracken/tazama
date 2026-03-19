@@ -482,6 +482,7 @@ async fn handle_export(id: &Value, args: &Value, state: &ServerState) -> Value {
         ),
         sample_rate: project.settings.sample_rate,
         channels: project.settings.channels,
+        audio_codec: None,
         hardware_accel: false,
     };
 

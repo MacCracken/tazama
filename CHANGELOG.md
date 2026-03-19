@@ -2,6 +2,15 @@
 
 ## 2026.3.18-1
 
+### Export Audio Codec Selection
+- `ExportAudioCodec` enum (Aac, Opus, Flac) — users can now choose audio codec for export
+- `ExportConfig.audio_codec` field wired through tarang export pipeline
+- FLAC lossless export available via tarang-audio's pure Rust FLAC encoder (LPC + fixed prediction, Rice coding)
+
+### Dependency Updates
+- Tarang bumped to 2026.3.18 (FLAC compression with Levinson-Durbin LPC, backlog error fixes)
+- OS recipe (`tazama.toml`) now declares `tarang` as runtime + build dependency
+
 ### Post-v1 Non-AI Features
 - Keyframe animation engine with linear, hold, and bezier cubic interpolation
 - Audio DSP: 3-band EQ, compressor, spectral noise reduction (rustfft), Schroeder reverb

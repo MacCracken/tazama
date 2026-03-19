@@ -16,12 +16,14 @@ runtime = [
     "vulkan-icd-loader",
     "sqlite",
     "webkit2gtk",
+    "tarang",
 ]
 build = [
     "rust",
     "nodejs",
     "vulkan-headers",
     "pkg-config",
+    "tarang",
 ]
 
 [marketplace]
