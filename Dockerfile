@@ -7,6 +7,11 @@ RUN apt-get update && apt-get install -y \
     libgstreamer1.0-dev \
     libgstreamer-plugins-base1.0-dev \
     libasound2-dev \
+    libdav1d-dev \
+    libvpx-dev \
+    libopenh264-dev \
+    libopus-dev \
+    libfdk-aac-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
@@ -30,6 +35,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gstreamer1.0-plugins-good \
     libgstreamer1.0-0 \
     libasound2 \
+    libdav1d7 \
+    libvpx9 \
+    libopenh264-7 \
+    libopus0 \
+    libfdk-aac2 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd -g 1007 tazama && useradd -u 1007 -g tazama -m -s /bin/bash tazama

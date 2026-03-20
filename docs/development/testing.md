@@ -137,13 +137,15 @@ For CI environments that need to run the full test suite:
 ```bash
 # Arch Linux / AGNOS
 pacman -S gstreamer gst-plugins-base gst-plugins-good gst-plugins-bad \
-          pipewire alsa-lib vulkan-icd-loader sqlite pkg-config
+          pipewire alsa-lib vulkan-icd-loader sqlite pkg-config \
+          dav1d libvpx openh264 opus libfdk-aac
 
 # Ubuntu/Debian
 apt-get install libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
                 gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
                 libpipewire-0.3-dev libasound2-dev libvulkan-dev \
-                libsqlite3-dev pkg-config
+                libsqlite3-dev pkg-config \
+                libdav1d-dev libvpx-dev libopenh264-dev libopus-dev libfdk-aac-dev
 ```
 
 ## Improving Coverage

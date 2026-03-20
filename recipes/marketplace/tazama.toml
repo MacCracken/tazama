@@ -16,14 +16,22 @@ runtime = [
     "vulkan-icd-loader",
     "sqlite",
     "webkit2gtk",
-    "tarang",
+    "dav1d",
+    "libvpx",
+    "openh264",
+    "opus",
+    "libfdk-aac",
 ]
 build = [
     "rust",
     "nodejs",
     "vulkan-headers",
     "pkg-config",
-    "tarang",
+    "dav1d",
+    "libvpx",
+    "openh264",
+    "opus",
+    "libfdk-aac",
 ]
 
 [marketplace]
