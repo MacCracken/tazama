@@ -45,20 +45,25 @@ jobs:
         if: matrix.platform == 'macos-arm64'
         run: brew install gstreamer dav1d libvpx openh264 opus fdk-aac
 
-      - name: Install Windows deps (GStreamer)
-        if: matrix.platform == 'windows'
-        uses: blinemedical/setup-gstreamer@v1
-
-      - name: Install Windows deps (codecs)
+      - name: Install Windows deps
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
+          # GStreamer via choco (avoids freedesktop.org bot detection)
+          choco install gstreamer gstreamer-devel --version=1.22.6 -y --no-progress
+          $GstRoot = "C:\gstreamer\1.0\msvc_x86_64"
+          if (Test-Path $GstRoot) {
+            echo "GSTREAMER_1_0_ROOT_MSVC_X86_64=$GstRoot" >> $env:GITHUB_ENV
+            echo "PKG_CONFIG_PATH=$GstRoot\lib\pkgconfig" >> $env:GITHUB_ENV
+            echo "$GstRoot\bin" >> $env:GITHUB_PATH
+          }
+
+          # pkg-config for Rust build scripts
+          choco install pkgconfiglite -y --no-progress
+
           # Tarang codec deps via vcpkg (pre-installed on GitHub runners)
           vcpkg install dav1d:x64-windows libvpx:x64-windows opus:x64-windows
           echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
-          # pkg-config for Rust build scripts
-          choco install pkgconfiglite -y
-          echo "PKG_CONFIG_PATH=$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\lib\pkgconfig" >> $env:GITHUB_ENV
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
