@@ -3,6 +3,7 @@ mod frame_source;
 
 use std::sync::Arc;
 
+#[cfg(debug_assertions)]
 use tauri::Manager;
 use tokio::sync::Mutex;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
@@ -15,7 +16,7 @@ pub fn run() {
         .manage(Arc::new(Mutex::new(tazama_storage::AutosaveManager::new(
             30,
         ))))
-        .setup(|app| {
+        .setup(|_app| {
             let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
                 EnvFilter::new("tazama=info,tazama_media=info,tazama_gpu=info,tazama_core=info")
             });
@@ -56,8 +57,8 @@ pub fn run() {
 
             #[cfg(debug_assertions)]
             {
-                let _window = app.get_webview_window("main").unwrap();
-                _window.open_devtools();
+                let window = _app.get_webview_window("main").unwrap();
+                window.open_devtools();
             }
 
             Ok(())
