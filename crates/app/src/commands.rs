@@ -355,3 +355,124 @@ pub async fn render_preview_frame(
         height: gpu_frame.height,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn new_project_creates_with_defaults() {
+        let project = new_project("Test".into(), 1920, 1080).await.unwrap();
+        assert_eq!(project.name, "Test");
+        assert_eq!(project.settings.width, 1920);
+        assert_eq!(project.settings.height, 1080);
+        assert!(project.timeline.tracks.is_empty()); // starts with no tracks
+    }
+
+    #[tokio::test]
+    async fn new_project_4k() {
+        let project = new_project("4K".into(), 3840, 2160).await.unwrap();
+        assert_eq!(project.settings.width, 3840);
+        assert_eq!(project.settings.height, 2160);
+    }
+
+    #[tokio::test]
+    async fn save_and_open_project_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.tazama");
+        let project = new_project("Round".into(), 1280, 720).await.unwrap();
+        save_project(project.clone(), path.display().to_string())
+            .await
+            .unwrap();
+        let loaded = open_project(path.display().to_string()).await.unwrap();
+        assert_eq!(loaded.name, "Round");
+        assert_eq!(loaded.settings.width, 1280);
+    }
+
+    #[tokio::test]
+    async fn open_project_nonexistent_returns_error() {
+        let result = open_project("/tmp/nonexistent_tazama_test.tazama".into()).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn import_media_nonexistent_source_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = import_media(
+            dir.path().display().to_string(),
+            "/tmp/nonexistent_media.mp4".into(),
+        )
+        .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn import_media_copies_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source.txt");
+        std::fs::write(&source, b"test data").unwrap();
+        let result = import_media(
+            dir.path().display().to_string(),
+            source.display().to_string(),
+        )
+        .await;
+        assert!(result.is_ok());
+        let dest = result.unwrap();
+        assert!(std::path::Path::new(&dest).exists());
+    }
+
+    #[tokio::test]
+    async fn probe_media_nonexistent_errors() {
+        tazama_media::init().ok();
+        let result = probe_media("/tmp/nonexistent_media.mp4".into()).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn check_autosave_no_recovery() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("project.tazama");
+        let result = check_autosave_recovery(path.display().to_string())
+            .await
+            .unwrap();
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn cleanup_autosave_nonexistent_is_ok() {
+        let result = cleanup_autosave("/tmp/nonexistent_project.tazama".into()).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn stop_recording_without_start_errors() {
+        let result = stop_recording().await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn set_proxy_mode_is_noop() {
+        let result = set_proxy_mode(true).await;
+        assert!(result.is_ok());
+        let result = set_proxy_mode(false).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn detect_hardware_returns_json() {
+        tazama_media::init().ok();
+        let result = detect_hardware().await.unwrap();
+        assert!(result.get("accelerators").is_some());
+        assert!(result.get("available_encoders").is_some());
+    }
+
+    #[tokio::test]
+    async fn generate_proxies_empty_project() {
+        tazama_media::init().ok();
+        let project = new_project("Empty".into(), 1920, 1080).await.unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let result = generate_proxies(project, dir.path().display().to_string(), 640).await;
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+}

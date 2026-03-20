@@ -6965,6 +6965,7 @@ dependencies = [
  "tazama-gpu",
  "tazama-media",
  "tazama-storage",
+ "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",

@@ -29,3 +29,8 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 directories = "6"
 base64.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tempfile = "3"
+serde_json.workspace = true

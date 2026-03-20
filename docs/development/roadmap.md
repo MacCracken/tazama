@@ -6,26 +6,23 @@ Tazama is an AI-native non-linear video editor.
 
 - **Phase 0–5** — Scaffold, media pipeline, editing backend, GPU rendering, desktop UI, MCP & AGNOS integration
 - **Post-v1 non-AI features** — Keyframe animation, audio DSP, mixer, voiceover, LUT, text, PiP, speed ramping, proxy, multi-cam, autosave, WASM plugins, format expansion, hardware encode (2026.3.18)
-- **Dependency migration** — Tarang to crates.io v0.19.3, ai-hwaccel non-optional (2026.3.19)
-- **Code audit & security** — DSP hardening, GPU render split, autosave race fix, export encoder selection, WASM sandboxing, path traversal fix, integer overflow protection, TS/Rust type parity (2026.3.19)
-- **P1 code quality** — test assertions, magic constants, EffectContext refactor, JSON size limits, GStreamer state validation, TOCTOU fix, emit logging (2026.3.19)
-- **Test coverage** — 724 tests, 51.6% coverage. Benchmarks: DSP, keyframe, timeline serde, tarang vs GStreamer (2026.3.19)
-- **Tarang default pipeline** — feature flag removed, always-on. Audio probe 15.4× faster, decode 3.96× faster than GStreamer (2026.3.19)
-- **ai-hwaccel integration** — cached registry, encoder detection, GPU info logging, IPC command, MCP tool (2026.3.20)
+- **Dependencies** — Tarang to crates.io v0.19.3 (always-on, 15× faster probe), ai-hwaccel integrated (cached registry, encoder detection, IPC/MCP) (2026.3.19–20)
+- **Code audit & security** — DSP hardening, GPU render split, autosave race fix, export encoder selection, WASM sandboxing, path traversal, integer overflow, TS/Rust type parity, EffectContext refactor, JSON limits, TOCTOU fix (2026.3.19)
+- **Test & benchmark suite** — 745 tests, GPU integration (AMD RADV), app command tests, criterion benchmarks (DSP, keyframe, serde, tarang vs GStreamer) (2026.3.19–20)
 
 ---
 
 ## Engineering Backlog
 
-### Test Coverage (remaining gaps need hardware/media fixtures)
+### Test Coverage
+- [ ] GPU integration tests — NVIDIA (NVENC/CUDA), Intel (oneAPI), lavapipe (CI headless)
 - [ ] Export pipeline integration — end-to-end encoding tests (13% coverage)
-- [x] GPU render/dispatch/transitions — 8 integration tests on real Vulkan (AMD RADV) (2026.3.20)
-- [ ] App command integration tests — all Tauri IPC handlers
 - [ ] Audio/video decode — requires real media files or mocks (0%)
 - [ ] Playback module — requires CPAL audio device mock (0%)
 
 ### Benchmarks
 - [ ] GPU render — frame render time at 1080p/4K, effect chain overhead
+- [ ] GPU render — cross-vendor comparison (AMD RADV vs NVIDIA vs Intel)
 - [ ] Export pipeline — encode throughput per format
 - [ ] Tarang vs GStreamer video — probe/decode with real MP4/MKV/WebM fixtures
 
