@@ -77,6 +77,54 @@
 - MKV added as native export format option
 - Hardware info panel showing GPU family, free memory, temperature, utilization
 
+#### Drag-and-Drop to Timeline
+- TrackRow now accepts media drops from MediaBrowser with `onDragOver`/`onDrop` handlers
+- Drop position calculated from mouse coordinates → frame number at correct zoom/scroll
+- Clip kind auto-matched to track kind (Audio track → Audio clip)
+- Visual drop highlight with dashed outline during dragover
+
+#### Clip Context Menu
+- Right-click on any clip opens a floating context menu
+- Split at Playhead (disabled when playhead is outside clip range)
+- Duplicate (places copy immediately after original)
+- Delete
+- ESC or click-outside dismissal
+
+#### Timeline Snapping
+- `useSnap` hook collects snap targets: all clip start/end edges, playhead position, markers, frame 0
+- 5-frame snap threshold
+- Integrated into `useDragClip` (clip move) and `useTrimClip` (left/right edge trim)
+- Both hooks now use `_pushUndo` once on drag start + `_mutateSilent` during drag — one undo entry per gesture
+
+### AI Features (Tier 1)
+
+#### Auto-cut / Highlights
+- `crates/media/src/ai.rs` — `detect_highlights()` uses `SceneDetector` + `content_score()` to rank video segments
+- Scores every 5th frame for performance, groups by scene boundary, returns top N by average score
+- `detect_highlights` Tauri IPC command + TS binding
+
+#### Subtitle Generation
+- `transcribe_audio` Tauri command — decodes audio, prepares for Whisper, routes through hoosh
+- `segments_to_srt()` and `segments_to_vtt()` formatters for subtitle export
+- Uses `tarang::ai::HooshClient::transcribe()` with configurable endpoint via `HOOSH_ENDPOINT` env var
+- UI shows timed cue list in AITools panel
+
+#### AI Color Grading
+- `auto_color_correct()` — analyzes frame luminance histogram (256 bins), computes correction gains
+- Brightness offset: shift mean toward neutral 128; Contrast: normalize std dev to 50; Saturation: boost flat images, tame over-contrasty
+- `auto_color_correct` Tauri command + "Auto Color" button applies ColorGrade effect with computed values
+
+#### Smart Transitions
+- `suggest_transition()` maps scene boundary characteristics to transition recommendations
+- HardCut + high score → Cut; moderate → Dissolve; GradualTransition → Dissolve or Fade
+- `suggest_transitions` Tauri command analyzes entire video, returns per-boundary suggestions with reasoning
+- UI displays suggestions with timestamps, types, durations, and explanations
+
+#### AI Tools UI
+- `AITools` component in ClipInspector — four buttons: Auto Color, Highlights, Transcribe, Transitions
+- Results displayed inline with formatted timestamps and scores
+- Loading states prevent concurrent operations
+
 ### Backend
 - `extract_waveform` Tauri command registered
 - `generate_thumbnails` Tauri command with base64-encoded thumbnail results

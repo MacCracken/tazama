@@ -1,3 +1,4 @@
+pub mod ai;
 pub mod decode;
 pub mod dsp;
 pub mod error;

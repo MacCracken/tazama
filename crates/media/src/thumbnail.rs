@@ -273,7 +273,7 @@ fn generate_thumbnails_content_based(
     Ok(thumbnails)
 }
 
-fn create_demuxer(path: &Path) -> Result<Box<dyn tarang::demux::Demuxer>, MediaPipelineError> {
+pub fn create_demuxer(path: &Path) -> Result<Box<dyn tarang::demux::Demuxer>, MediaPipelineError> {
     use std::io::Read;
 
     let mut file = std::fs::File::open(path)?;
@@ -298,7 +298,7 @@ fn create_demuxer(path: &Path) -> Result<Box<dyn tarang::demux::Demuxer>, MediaP
     Ok(demuxer)
 }
 
-fn find_video_stream(info: &tarang::core::MediaInfo) -> Option<(usize, tarang::core::VideoCodec)> {
+pub fn find_video_stream(info: &tarang::core::MediaInfo) -> Option<(usize, tarang::core::VideoCodec)> {
     for (idx, stream) in info.streams.iter().enumerate() {
         if let tarang::core::StreamInfo::Video(vs) = stream {
             return Some((idx, vs.codec));

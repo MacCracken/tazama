@@ -112,6 +112,61 @@ export async function setProxyMode(enabled: boolean): Promise<void> {
   return invoke<void>("set_proxy_mode", { enabled });
 }
 
+// AI features
+
+export interface Highlight {
+  start_ms: number;
+  end_ms: number;
+  score: number;
+}
+
+export interface SubtitleCue {
+  index: number;
+  start_ms: number;
+  end_ms: number;
+  text: string;
+}
+
+export interface ColorCorrection {
+  brightness_offset: number;
+  contrast_factor: number;
+  saturation_factor: number;
+}
+
+export interface TransitionSuggestion {
+  kind: string;
+  duration_frames: number;
+  reason: string;
+}
+
+export async function detectHighlights(
+  path: string,
+  maxHighlights: number,
+): Promise<Highlight[]> {
+  return invoke<Highlight[]>("detect_highlights", { path, maxHighlights });
+}
+
+export async function transcribeAudio(
+  path: string,
+  languageHint?: string,
+): Promise<SubtitleCue[]> {
+  return invoke<SubtitleCue[]>("transcribe_audio", { path, languageHint });
+}
+
+export async function autoColorCorrect(
+  path: string,
+  timestampMs: number,
+): Promise<ColorCorrection> {
+  return invoke<ColorCorrection>("auto_color_correct", { path, timestampMs });
+}
+
+export async function suggestTransitions(
+  path: string,
+  fps: number,
+): Promise<[number, TransitionSuggestion][]> {
+  return invoke<[number, TransitionSuggestion][]>("suggest_transitions", { path, fps });
+}
+
 // Waveform extraction
 export async function extractWaveform(
   path: string,

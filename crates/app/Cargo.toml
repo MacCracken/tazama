@@ -29,6 +29,8 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 directories = "6"
 base64.workspace = true
+tarang = { version = "0.20.3", features = ["openh264", "openh264-enc", "vpx", "dav1d"] }
+bytes.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

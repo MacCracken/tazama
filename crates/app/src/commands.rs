@@ -353,6 +353,156 @@ pub struct ThumbnailResult {
     pub data: String,
 }
 
+// --- AI features ---
+
+#[tauri::command]
+pub async fn detect_highlights(
+    path: String,
+    max_highlights: u32,
+) -> Result<Vec<tazama_media::ai::Highlight>, String> {
+    tazama_media::init().map_err(|e| e.to_string())?;
+    tazama_media::ai::detect_highlights(
+        std::path::Path::new(&path),
+        max_highlights as usize,
+    )
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn transcribe_audio(
+    path: String,
+    language_hint: Option<String>,
+) -> Result<Vec<tazama_media::ai::SubtitleCue>, String> {
+    tazama_media::init().map_err(|e| e.to_string())?;
+
+    let path = std::path::PathBuf::from(path);
+    let mut rx = tazama_media::decode::audio::AudioDecoder::decode(&path)
+        .map_err(|e| e.to_string())?;
+
+    let mut all_samples = Vec::new();
+    let mut sample_rate = 48000u32;
+    let mut channels = 2u16;
+    while let Some(buf) = rx.recv().await {
+        sample_rate = buf.sample_rate;
+        channels = buf.channels;
+        all_samples.extend_from_slice(&buf.samples);
+    }
+
+    if all_samples.is_empty() {
+        return Err("no audio data found".into());
+    }
+
+    let byte_data: Vec<u8> = all_samples.iter().flat_map(|s| s.to_le_bytes()).collect();
+    let num_frames = all_samples.len() / channels.max(1) as usize;
+    let tarang_buf = tarang::core::AudioBuffer {
+        data: bytes::Bytes::from(byte_data),
+        sample_format: tarang::core::SampleFormat::F32,
+        channels,
+        sample_rate,
+        num_frames,
+        timestamp: std::time::Duration::ZERO,
+    };
+
+    // Prepare for transcription
+    let prepared = tarang::ai::prepare_audio_for_transcription(&tarang_buf);
+    let duration_secs = prepared.num_frames as f64 / prepared.sample_rate as f64;
+
+    let request = tarang::ai::TranscriptionRequest {
+        audio_codec: "pcm_f32le".to_string(),
+        sample_rate: prepared.sample_rate,
+        channels: prepared.channels,
+        duration_secs,
+        language_hint,
+    };
+
+    let hoosh_config = tarang::ai::HooshConfig {
+        endpoint: std::env::var("HOOSH_ENDPOINT")
+            .unwrap_or_else(|_| "http://localhost:8088".to_string()),
+        api_key: std::env::var("HOOSH_API_KEY").ok(),
+        model: tarang::ai::WhisperModel::Base,
+        timeout: std::time::Duration::from_secs(120),
+        max_wav_bytes: 50 * 1024 * 1024,
+        chunk_duration_secs: 30.0,
+    };
+
+    let client = tarang::ai::HooshClient::new(hoosh_config)
+        .map_err(|e| e.to_string())?;
+    let result = client
+        .transcribe(&request, &prepared)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let cues: Vec<tazama_media::ai::SubtitleCue> = result
+        .segments
+        .iter()
+        .enumerate()
+        .map(|(i, seg)| tazama_media::ai::SubtitleCue {
+            index: i + 1,
+            start_ms: (seg.start * 1000.0) as u64,
+            end_ms: (seg.end * 1000.0) as u64,
+            text: seg.text.clone(),
+        })
+        .collect();
+
+    Ok(cues)
+}
+
+#[tauri::command]
+pub async fn auto_color_correct(
+    path: String,
+    timestamp_ms: u64,
+) -> Result<tazama_media::ai::ColorCorrection, String> {
+    tazama_media::init().map_err(|e| e.to_string())?;
+
+    let path = std::path::PathBuf::from(path);
+    tokio::task::spawn_blocking(move || {
+        let mut demuxer = tazama_media::thumbnail::create_demuxer(&path)
+            .map_err(|e| e.to_string())?;
+        let info = demuxer.probe().map_err(|e| e.to_string())?;
+        let (video_stream_idx, codec) = tazama_media::thumbnail::find_video_stream(&info)
+            .ok_or("no video stream")?;
+
+        let config = tarang::video::DecoderConfig::for_codec(codec)
+            .map_err(|e| e.to_string())?;
+        let mut decoder = tarang::video::VideoDecoder::new(config)
+            .map_err(|e| e.to_string())?;
+        if let Some(tarang::core::StreamInfo::Video(vs)) = info.streams.get(video_stream_idx) {
+            decoder.init(vs);
+        }
+
+        let target_ns = timestamp_ms * 1_000_000;
+
+        loop {
+            let packet = demuxer.next_packet().map_err(|e| e.to_string())?;
+            if packet.stream_index != video_stream_idx {
+                continue;
+            }
+            decoder.send_packet(&packet.data, packet.timestamp)
+                .map_err(|e| e.to_string())?;
+
+            while let Ok(frame) = decoder.receive_frame() {
+                if frame.timestamp.as_nanos() as u64 >= target_ns {
+                    return Ok(tazama_media::ai::auto_color_correct(&frame));
+                }
+            }
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn suggest_transitions(
+    path: String,
+    fps: f64,
+) -> Result<Vec<(u64, tazama_media::ai::TransitionSuggestion)>, String> {
+    tazama_media::init().map_err(|e| e.to_string())?;
+    tazama_media::ai::suggest_transitions(std::path::Path::new(&path), fps)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn detect_hardware() -> Result<serde_json::Value, String> {
     let hardware = tazama_media::hwaccel::hardware_summary();

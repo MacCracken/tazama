@@ -6952,10 +6952,12 @@ name = "tazama"
 version = "2026.3.20"
 dependencies = [
  "base64 0.22.1",
+ "bytes",
  "chrono",
  "directories",
  "serde",
  "serde_json",
+ "tarang",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",

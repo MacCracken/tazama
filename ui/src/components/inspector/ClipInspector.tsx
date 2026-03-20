@@ -2,6 +2,7 @@ import type { Clip } from "../../types";
 import { useProjectStore } from "../../stores/projectStore";
 import { EffectList } from "./EffectList";
 import { LoudnessMeter } from "./LoudnessMeter";
+import { AITools } from "./AITools";
 
 interface ClipInspectorProps {
   clip: Clip;
@@ -102,6 +103,9 @@ export function ClipInspector({ clip, trackId }: ClipInspectorProps) {
         </div>
         {clip.media?.path && (clip.kind === "Audio" || clip.kind === "Video") && (
           <LoudnessMeter mediaPath={clip.media.path} />
+        )}
+        {clip.media?.path && (
+          <AITools clip={clip} trackId={trackId} />
         )}
         <EffectList clip={clip} trackId={trackId} />
       </div>
