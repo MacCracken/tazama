@@ -44,8 +44,8 @@ impl From<gstreamer::glib::BoolError> for MediaPipelineError {
 }
 
 #[cfg(feature = "tarang")]
-impl From<tarang_core::TarangError> for MediaPipelineError {
-    fn from(err: tarang_core::TarangError) -> Self {
+impl From<tarang::core::TarangError> for MediaPipelineError {
+    fn from(err: tarang::core::TarangError) -> Self {
         Self::Tarang(err.to_string())
     }
 }

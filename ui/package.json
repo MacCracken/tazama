@@ -1,7 +1,7 @@
 {
   "name": "tazama-ui",
   "private": true,
-  "version": "2026.3.18-2",
+  "version": "2026.3.19",
   "type": "module",
   "scripts": {
     "dev": "vite",

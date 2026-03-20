@@ -250,7 +250,7 @@ fn decode_single_frame(
 #[cfg(feature = "tarang")]
 fn create_tarang_demuxer(
     path: &Path,
-) -> Result<Box<dyn tarang_demux::Demuxer>, MediaPipelineError> {
+) -> Result<Box<dyn tarang::demux::Demuxer>, MediaPipelineError> {
     use std::io::Read;
 
     let mut file = std::fs::File::open(path)?;
@@ -258,15 +258,15 @@ fn create_tarang_demuxer(
     let n = file.read(&mut header)?;
     drop(file);
 
-    let format = tarang_demux::detect_format(&header[..n])
+    let format = tarang::demux::detect_format(&header[..n])
         .map_err(|e| MediaPipelineError::Decode(e.to_string()))?;
 
     let file = std::fs::File::open(path)?;
     let reader = std::io::BufReader::new(file);
-    let demuxer: Box<dyn tarang_demux::Demuxer> = match format {
-        tarang_core::ContainerFormat::Mp4 => Box::new(tarang_demux::Mp4Demuxer::new(reader)),
-        tarang_core::ContainerFormat::Mkv | tarang_core::ContainerFormat::WebM => {
-            Box::new(tarang_demux::MkvDemuxer::new(reader))
+    let demuxer: Box<dyn tarang::demux::Demuxer> = match format {
+        tarang::core::ContainerFormat::Mp4 => Box::new(tarang::demux::Mp4Demuxer::new(reader)),
+        tarang::core::ContainerFormat::Mkv | tarang::core::ContainerFormat::WebM => {
+            Box::new(tarang::demux::MkvDemuxer::new(reader))
         }
         other => {
             return Err(MediaPipelineError::UnsupportedFormat(format!("{other:?}")));
@@ -277,18 +277,18 @@ fn create_tarang_demuxer(
 
 #[cfg(feature = "tarang")]
 fn create_tarang_decoder(
-    codec: tarang_core::VideoCodec,
-) -> Result<tarang_video::VideoDecoder, MediaPipelineError> {
-    let config = tarang_video::DecoderConfig::for_codec(codec)?;
-    let decoder = tarang_video::VideoDecoder::new(config)?;
+    codec: tarang::core::VideoCodec,
+) -> Result<tarang::video::VideoDecoder, MediaPipelineError> {
+    let config = tarang::video::DecoderConfig::for_codec(codec)?;
+    let decoder = tarang::video::VideoDecoder::new(config)?;
     Ok(decoder)
 }
 
 /// Find the first video stream index and its codec from tarang MediaInfo.
 #[cfg(feature = "tarang")]
-fn find_video_stream(info: &tarang_core::MediaInfo) -> Option<(usize, tarang_core::VideoCodec)> {
+fn find_video_stream(info: &tarang::core::MediaInfo) -> Option<(usize, tarang::core::VideoCodec)> {
     for (idx, stream) in info.streams.iter().enumerate() {
-        if let tarang_core::StreamInfo::Video(vs) = stream {
+        if let tarang::core::StreamInfo::Video(vs) = stream {
             return Some((idx, vs.codec));
         }
     }
@@ -310,7 +310,7 @@ fn decode_tarang_video(
     let mut decoder = create_tarang_decoder(codec)?;
 
     // Initialize decoder with stream info
-    if let Some(tarang_core::StreamInfo::Video(vs)) = info.streams.get(video_stream_idx) {
+    if let Some(tarang::core::StreamInfo::Video(vs)) = info.streams.get(video_stream_idx) {
         decoder.init(vs);
     }
 
@@ -397,7 +397,7 @@ fn decode_tarang_single_frame(
 
     let mut decoder = create_tarang_decoder(codec)?;
 
-    if let Some(tarang_core::StreamInfo::Video(vs)) = info.streams.get(video_stream_idx) {
+    if let Some(tarang::core::StreamInfo::Video(vs)) = info.streams.get(video_stream_idx) {
         decoder.init(vs);
     }
 

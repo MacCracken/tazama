@@ -137,7 +137,7 @@ fn is_audio_file(path: &Path) -> bool {
 #[cfg(feature = "tarang")]
 fn probe_tarang(path: &Path) -> Result<MediaInfo, MediaPipelineError> {
     let file = std::fs::File::open(path)?;
-    let info = tarang_audio::probe_audio(file)?;
+    let info = tarang::audio::probe_audio(file)?;
 
     let duration_ms = info.duration.map(|d| d.as_millis() as u64).unwrap_or(0);
     let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
@@ -175,7 +175,7 @@ fn is_video_file(path: &Path) -> bool {
 #[cfg(feature = "tarang")]
 fn probe_tarang_video(path: &Path) -> Result<MediaInfo, MediaPipelineError> {
     use std::io::Read;
-    use tarang_demux::Demuxer;
+    use tarang::demux::Demuxer;
 
     let mut file = std::fs::File::open(path)?;
     let mut header = [0u8; 32];
@@ -183,7 +183,7 @@ fn probe_tarang_video(path: &Path) -> Result<MediaInfo, MediaPipelineError> {
     drop(file);
 
     let format =
-        tarang_demux::detect_format(&header[..n]).map_err(|e| MediaPipelineError::ProbeFailed {
+        tarang::demux::detect_format(&header[..n]).map_err(|e| MediaPipelineError::ProbeFailed {
             path: path.display().to_string(),
             reason: e.to_string(),
         })?;
@@ -191,9 +191,9 @@ fn probe_tarang_video(path: &Path) -> Result<MediaInfo, MediaPipelineError> {
     let file = std::fs::File::open(path)?;
     let reader = std::io::BufReader::new(file);
     let mut demuxer: Box<dyn Demuxer> = match format {
-        tarang_core::ContainerFormat::Mp4 => Box::new(tarang_demux::Mp4Demuxer::new(reader)),
-        tarang_core::ContainerFormat::Mkv | tarang_core::ContainerFormat::WebM => {
-            Box::new(tarang_demux::MkvDemuxer::new(reader))
+        tarang::core::ContainerFormat::Mp4 => Box::new(tarang::demux::Mp4Demuxer::new(reader)),
+        tarang::core::ContainerFormat::Mkv | tarang::core::ContainerFormat::WebM => {
+            Box::new(tarang::demux::MkvDemuxer::new(reader))
         }
         other => {
             return Err(MediaPipelineError::UnsupportedFormat(format!("{other:?}")));
@@ -219,7 +219,7 @@ fn probe_tarang_video(path: &Path) -> Result<MediaInfo, MediaPipelineError> {
 
     for stream in &tarang_info.streams {
         match stream {
-            tarang_core::StreamInfo::Video(vs) => {
+            tarang::core::StreamInfo::Video(vs) => {
                 let frame_rate = f64_to_rational(vs.frame_rate);
                 video_streams.push(VideoStreamInfo {
                     codec: map_tarang_video_codec(vs.codec),
@@ -230,7 +230,7 @@ fn probe_tarang_video(path: &Path) -> Result<MediaInfo, MediaPipelineError> {
                     pixel_format: format!("{:?}", vs.pixel_format).to_lowercase(),
                 });
             }
-            tarang_core::StreamInfo::Audio(aus) => {
+            tarang::core::StreamInfo::Audio(aus) => {
                 audio_streams.push(AudioStreamInfo {
                     codec: map_tarang_audio_codec(aus.codec),
                     sample_rate: aus.sample_rate,
@@ -264,12 +264,12 @@ fn probe_tarang_video(path: &Path) -> Result<MediaInfo, MediaPipelineError> {
 }
 
 #[cfg(feature = "tarang")]
-fn map_tarang_video_codec(codec: tarang_core::VideoCodec) -> Codec {
+fn map_tarang_video_codec(codec: tarang::core::VideoCodec) -> Codec {
     match codec {
-        tarang_core::VideoCodec::H264 => Codec::H264,
-        tarang_core::VideoCodec::H265 => Codec::H265,
-        tarang_core::VideoCodec::Vp9 => Codec::Vp9,
-        tarang_core::VideoCodec::Av1 => Codec::Av1,
+        tarang::core::VideoCodec::H264 => Codec::H264,
+        tarang::core::VideoCodec::H265 => Codec::H265,
+        tarang::core::VideoCodec::Vp9 => Codec::Vp9,
+        tarang::core::VideoCodec::Av1 => Codec::Av1,
         _ => Codec::Other,
     }
 }
@@ -314,12 +314,12 @@ fn gcd(mut a: u32, mut b: u32) -> u32 {
 }
 
 #[cfg(feature = "tarang")]
-fn map_tarang_audio_codec(codec: tarang_core::AudioCodec) -> Codec {
+fn map_tarang_audio_codec(codec: tarang::core::AudioCodec) -> Codec {
     match codec {
-        tarang_core::AudioCodec::Aac => Codec::Aac,
-        tarang_core::AudioCodec::Mp3 => Codec::Mp3,
-        tarang_core::AudioCodec::Flac => Codec::Flac,
-        tarang_core::AudioCodec::Opus => Codec::Opus,
+        tarang::core::AudioCodec::Aac => Codec::Aac,
+        tarang::core::AudioCodec::Mp3 => Codec::Mp3,
+        tarang::core::AudioCodec::Flac => Codec::Flac,
+        tarang::core::AudioCodec::Opus => Codec::Opus,
         _ => Codec::Other,
     }
 }

@@ -29,7 +29,7 @@ impl TarangExportPipeline {
 
         // TODO: when tarang video encode is ready, route video frames through
         // tarang-video encoder instead of GStreamer.  FLAC audio encoding is
-        // available now via tarang_audio::encode_flac::FlacEncoder.
+        // available now via tarang::audio::encode_flac::FlacEncoder.
         tracing::warn!("tarang video export not fully implemented, falling back to GStreamer");
         super::pipeline::ExportPipeline::run_with_total(config, video_rx, audio_rx, total_frames)
     }

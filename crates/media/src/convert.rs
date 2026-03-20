@@ -5,10 +5,10 @@ use crate::error::MediaPipelineError;
 
 /// Convert a tarang `VideoFrame` (YUV420p or RGB24) to RGBA bytes.
 ///
-/// Uses `tarang_ai::yuv420p_to_rgb24` for the YUV->RGB conversion,
+/// Uses `tarang::ai::yuv420p_to_rgb24` for the YUV->RGB conversion,
 /// then expands RGB24 to RGBA32 with alpha=255.
-pub fn yuv420p_to_rgba(frame: &tarang_core::VideoFrame) -> Result<Vec<u8>, MediaPipelineError> {
-    let rgb = tarang_ai::yuv420p_to_rgb24(frame)
+pub fn yuv420p_to_rgba(frame: &tarang::core::VideoFrame) -> Result<Vec<u8>, MediaPipelineError> {
+    let rgb = tarang::ai::yuv420p_to_rgb24(frame)
         .map_err(|e| MediaPipelineError::Decode(e.to_string()))?;
 
     let pixel_count = rgb.len() / 3;
@@ -24,7 +24,7 @@ pub fn yuv420p_to_rgba(frame: &tarang_core::VideoFrame) -> Result<Vec<u8>, Media
 
 /// Convert a tarang `VideoFrame` to a tazama `VideoFrame`.
 pub fn tarang_frame_to_tazama(
-    frame: &tarang_core::VideoFrame,
+    frame: &tarang::core::VideoFrame,
     frame_index: u64,
 ) -> Result<VideoFrame, MediaPipelineError> {
     let rgba = yuv420p_to_rgba(frame)?;
