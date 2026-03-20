@@ -44,7 +44,15 @@ runs:
           libasound2-dev \
           libwebkit2gtk-4.1-dev libgtk-3-dev libappindicator3-dev \
           librsvg2-dev patchelf \
-          libdav1d-dev libvpx-dev libopenh264-dev libopus-dev libfdk-aac-dev
+          libdav1d-dev libvpx-dev libopenh264-dev libopus-dev libfdk-aac-dev \
+          mesa-vulkan-drivers
+
+    - name: Configure lavapipe for GPU tests
+      if: inputs.install-system-deps == 'true'
+      shell: bash
+      run: |
+        # Use Mesa's lavapipe software Vulkan renderer for CI (no real GPU)
+        echo "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json" >> "$GITHUB_ENV"
 
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@master

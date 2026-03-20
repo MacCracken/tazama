@@ -1,7 +1,7 @@
-//! GPU integration tests — require a real Vulkan GPU (AMD Radeon Vega via RADV).
+//! GPU integration tests — require a real Vulkan GPU.
 //!
 //! These tests create actual Vulkan contexts and execute compute shaders on the
-//! GPU. They will fail on machines without a Vulkan-capable device.
+//! GPU. They are **skipped** on machines without a Vulkan-capable device (e.g. CI).
 
 use std::sync::Arc;
 
@@ -12,6 +12,28 @@ use gpu_allocator::MemoryLocation;
 use tazama_core::*;
 use tazama_gpu::buffer::GpuBuffer;
 use tazama_gpu::*;
+
+/// Try to create a GPU context. Returns `None` if no Vulkan device is available,
+/// allowing tests to be skipped gracefully on CI runners without a GPU.
+fn try_gpu_context() -> Option<Arc<GpuContext>> {
+    match GpuContext::new() {
+        Ok(ctx) => Some(Arc::new(ctx)),
+        Err(e) => {
+            eprintln!("SKIP: no Vulkan GPU available ({e})");
+            None
+        }
+    }
+}
+
+/// Macro to skip a test if no GPU is available.
+macro_rules! require_gpu {
+    () => {
+        match try_gpu_context() {
+            Some(ctx) => ctx,
+            None => return,
+        }
+    };
+}
 
 // ---------------------------------------------------------------------------
 // Mock FrameSource
@@ -80,13 +102,12 @@ fn small_settings(width: u32, height: u32) -> ProjectSettings {
 
 #[test]
 fn gpu_context_creation() {
-    let ctx = GpuContext::new();
-    assert!(ctx.is_ok(), "GPU context should initialize on this machine");
+    let _ctx = require_gpu!();
 }
 
 #[test]
 fn pipeline_cache_creation() {
-    let ctx = Arc::new(GpuContext::new().unwrap());
+    let ctx = require_gpu!();
     let cache = PipelineCache::new(&ctx);
     assert!(cache.is_ok(), "Pipeline cache should compile all 8 shaders");
     // Explicitly destroy to avoid leak
@@ -95,14 +116,14 @@ fn pipeline_cache_creation() {
 
 #[test]
 fn renderer_creation() {
-    let ctx = Arc::new(GpuContext::new().unwrap());
+    let ctx = require_gpu!();
     let renderer = Renderer::new(ctx);
     assert!(renderer.is_ok());
 }
 
 #[test]
 fn buffer_write_read_roundtrip() {
-    let ctx = Arc::new(GpuContext::new().unwrap());
+    let ctx = require_gpu!();
 
     let data: Vec<u8> = (0..=255).collect();
     let mut buf = GpuBuffer::new(
@@ -123,7 +144,7 @@ fn buffer_write_read_roundtrip() {
 
 #[test]
 fn render_empty_timeline() {
-    let ctx = Arc::new(GpuContext::new().unwrap());
+    let ctx = require_gpu!();
     let renderer = Renderer::new(ctx).unwrap();
     let timeline = Timeline::new();
     let settings = small_settings(256, 256);
@@ -140,7 +161,7 @@ fn render_empty_timeline() {
 
 #[test]
 fn render_clip_with_color_grade() {
-    let ctx = Arc::new(GpuContext::new().unwrap());
+    let ctx = require_gpu!();
     let renderer = Renderer::new(ctx).unwrap();
     let settings = small_settings(64, 64);
 
@@ -216,7 +237,7 @@ fn render_clip_with_color_grade() {
 
 #[test]
 fn render_clip_with_crop() {
-    let ctx = Arc::new(GpuContext::new().unwrap());
+    let ctx = require_gpu!();
     let renderer = Renderer::new(ctx).unwrap();
     let settings = small_settings(64, 64);
 
