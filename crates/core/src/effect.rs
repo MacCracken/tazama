@@ -235,17 +235,18 @@ mod tests {
         let json = serde_json::to_string(&effect).unwrap();
         let back: Effect = serde_json::from_str(&json).unwrap();
         assert_eq!(back.id, effect.id);
-        match back.kind {
-            EffectKind::Eq {
-                low_gain_db,
-                mid_gain_db,
-                high_gain_db,
-            } => {
-                assert!((low_gain_db - 3.0).abs() < 1e-6);
-                assert!((mid_gain_db - (-1.5)).abs() < 1e-6);
-                assert!((high_gain_db - 6.0).abs() < 1e-6);
-            }
-            _ => panic!("expected Eq variant"),
+        assert!(matches!(back.kind, EffectKind::Eq { .. }));
+        if let EffectKind::Eq {
+            low_gain_db,
+            mid_gain_db,
+            high_gain_db,
+        } = &back.kind
+        {
+            assert!((low_gain_db - 3.0).abs() < 1e-6);
+            assert!((mid_gain_db - (-1.5)).abs() < 1e-6);
+            assert!((high_gain_db - 6.0).abs() < 1e-6);
+        } else {
+            unreachable!();
         }
     }
 
@@ -269,11 +270,11 @@ mod tests {
         let json = serde_json::to_string(&effect).unwrap();
         let back: Effect = serde_json::from_str(&json).unwrap();
         assert_eq!(back.id, effect.id);
-        match back.kind {
-            EffectKind::NoiseReduction { strength } => {
-                assert!((strength - 0.7).abs() < 1e-6);
-            }
-            _ => panic!("expected NoiseReduction variant"),
+        assert!(matches!(back.kind, EffectKind::NoiseReduction { .. }));
+        if let EffectKind::NoiseReduction { strength } = &back.kind {
+            assert!((strength - 0.7).abs() < 1e-6);
+        } else {
+            unreachable!();
         }
     }
 
@@ -297,11 +298,11 @@ mod tests {
         });
         let json = serde_json::to_string(&effect).unwrap();
         let back: Effect = serde_json::from_str(&json).unwrap();
-        match back.kind {
-            EffectKind::Lut { lut_path } => {
-                assert_eq!(lut_path, "/path/to/lut.cube");
-            }
-            _ => panic!("expected Lut variant"),
+        assert!(matches!(back.kind, EffectKind::Lut { .. }));
+        if let EffectKind::Lut { lut_path } = &back.kind {
+            assert_eq!(lut_path, "/path/to/lut.cube");
+        } else {
+            unreachable!();
         }
     }
 
@@ -315,19 +316,20 @@ mod tests {
         });
         let json = serde_json::to_string(&effect).unwrap();
         let back: Effect = serde_json::from_str(&json).unwrap();
-        match back.kind {
-            EffectKind::Transform {
-                scale_x,
-                scale_y,
-                translate_x,
-                translate_y,
-            } => {
-                assert!((scale_x - 2.0).abs() < 1e-6);
-                assert!((scale_y - 0.5).abs() < 1e-6);
-                assert!((translate_x - 100.0).abs() < 1e-6);
-                assert!((translate_y - (-50.0)).abs() < 1e-6);
-            }
-            _ => panic!("expected Transform variant"),
+        assert!(matches!(back.kind, EffectKind::Transform { .. }));
+        if let EffectKind::Transform {
+            scale_x,
+            scale_y,
+            translate_x,
+            translate_y,
+        } = &back.kind
+        {
+            assert!((scale_x - 2.0).abs() < 1e-6);
+            assert!((scale_y - 0.5).abs() < 1e-6);
+            assert!((translate_x - 100.0).abs() < 1e-6);
+            assert!((translate_y - (-50.0)).abs() < 1e-6);
+        } else {
+            unreachable!();
         }
     }
 
@@ -343,23 +345,24 @@ mod tests {
         });
         let json = serde_json::to_string(&effect).unwrap();
         let back: Effect = serde_json::from_str(&json).unwrap();
-        match back.kind {
-            EffectKind::Text {
-                content,
-                font_family,
-                font_size,
-                color,
-                x,
-                y,
-            } => {
-                assert_eq!(content, "Hello World");
-                assert_eq!(font_family, "Helvetica");
-                assert!((font_size - 36.0).abs() < 1e-6);
-                assert_eq!(color, [1.0, 0.0, 0.0, 1.0]);
-                assert!((x - 50.0).abs() < 1e-6);
-                assert!((y - 100.0).abs() < 1e-6);
-            }
-            _ => panic!("expected Text variant"),
+        assert!(matches!(back.kind, EffectKind::Text { .. }));
+        if let EffectKind::Text {
+            content,
+            font_family,
+            font_size,
+            color,
+            x,
+            y,
+        } = &back.kind
+        {
+            assert_eq!(content, "Hello World");
+            assert_eq!(font_family, "Helvetica");
+            assert!((font_size - 36.0).abs() < 1e-6);
+            assert_eq!(color, &[1.0, 0.0, 0.0, 1.0]);
+            assert!((x - 50.0).abs() < 1e-6);
+            assert!((y - 100.0).abs() < 1e-6);
+        } else {
+            unreachable!();
         }
     }
 
@@ -374,14 +377,14 @@ mod tests {
         });
         let json = serde_json::to_string(&effect).unwrap();
         let back: Effect = serde_json::from_str(&json).unwrap();
-        match back.kind {
-            EffectKind::Plugin { plugin_id, params } => {
-                assert_eq!(plugin_id, "my.plugin.v1");
-                assert_eq!(params.len(), 2);
-                assert!((params["intensity"] - 0.75).abs() < 1e-6);
-                assert!((params["mix"] - 1.0).abs() < 1e-6);
-            }
-            _ => panic!("expected Plugin variant"),
+        assert!(matches!(back.kind, EffectKind::Plugin { .. }));
+        if let EffectKind::Plugin { plugin_id, params } = &back.kind {
+            assert_eq!(plugin_id, "my.plugin.v1");
+            assert_eq!(params.len(), 2);
+            assert!((params["intensity"] - 0.75).abs() < 1e-6);
+            assert!((params["mix"] - 1.0).abs() < 1e-6);
+        } else {
+            unreachable!();
         }
     }
 
@@ -417,12 +420,12 @@ mod tests {
         });
         let json = serde_json::to_string(&effect).unwrap();
         let back: Effect = serde_json::from_str(&json).unwrap();
-        match back.kind {
-            EffectKind::Plugin { plugin_id, params } => {
-                assert_eq!(plugin_id, "empty-plugin");
-                assert!(params.is_empty());
-            }
-            _ => panic!("expected Plugin variant"),
+        assert!(matches!(back.kind, EffectKind::Plugin { .. }));
+        if let EffectKind::Plugin { plugin_id, params } = &back.kind {
+            assert_eq!(plugin_id, "empty-plugin");
+            assert!(params.is_empty());
+        } else {
+            unreachable!();
         }
     }
 
@@ -438,11 +441,11 @@ mod tests {
         });
         let json = serde_json::to_string(&effect).unwrap();
         let back: Effect = serde_json::from_str(&json).unwrap();
-        match back.kind {
-            EffectKind::Text { content, .. } => {
-                assert_eq!(content, "");
-            }
-            _ => panic!("expected Text variant"),
+        assert!(matches!(back.kind, EffectKind::Text { .. }));
+        if let EffectKind::Text { content, .. } = &back.kind {
+            assert_eq!(content, "");
+        } else {
+            unreachable!();
         }
     }
 

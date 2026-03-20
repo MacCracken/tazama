@@ -24,15 +24,20 @@ pub async fn generate_proxy(
     let proxy_path = proxy_dir.join(format!("{stem}_proxy_{target_width}.mp4"));
 
     // If proxy already exists and is newer than source, skip
-    if proxy_path.exists() {
-        let source_meta = tokio::fs::metadata(source).await?;
-        let proxy_meta = tokio::fs::metadata(&proxy_path).await?;
-        if let (Ok(src_time), Ok(proxy_time)) = (source_meta.modified(), proxy_meta.modified())
-            && proxy_time > src_time
-        {
-            debug!("proxy already up-to-date: {}", proxy_path.display());
-            return Ok(proxy_path);
+    match tokio::fs::metadata(&proxy_path).await {
+        Ok(proxy_meta) => {
+            let source_meta = tokio::fs::metadata(source).await?;
+            if let (Ok(src_time), Ok(proxy_time)) = (source_meta.modified(), proxy_meta.modified())
+                && proxy_time > src_time
+            {
+                debug!("proxy already up-to-date: {}", proxy_path.display());
+                return Ok(proxy_path);
+            }
         }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            // proxy doesn't exist, continue to generate
+        }
+        Err(e) => return Err(e.into()),
     }
 
     let source_str = source.to_string_lossy().to_string();

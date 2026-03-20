@@ -5,7 +5,7 @@ pub mod tarang_pipeline;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tokio::sync::{mpsc, watch};
-use tracing::{info, warn};
+use tracing::info;
 
 use crate::decode::{AudioBuffer, VideoFrame};
 use crate::error::MediaPipelineError;

@@ -19,6 +19,13 @@ use wasmtime::*;
 use crate::error::MediaPipelineError;
 
 #[cfg(feature = "plugins")]
+const PLUGIN_TIMEOUT_SECS: u64 = 5;
+#[cfg(feature = "plugins")]
+const PLUGIN_MEMORY_PAGES: u32 = 256;
+#[cfg(feature = "plugins")]
+const PLUGIN_MAX_MEMORY_BYTES: usize = 16_777_216;
+
+#[cfg(feature = "plugins")]
 static PLUGIN_CACHE: std::sync::LazyLock<Mutex<HashMap<String, Vec<u8>>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
@@ -75,11 +82,11 @@ impl PluginInstance {
         store.set_epoch_deadline(1);
         let engine_clone = self.engine.clone();
         let timeout_handle = std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_secs(5));
+            std::thread::sleep(std::time::Duration::from_secs(PLUGIN_TIMEOUT_SECS));
             engine_clone.increment_epoch();
         });
 
-        let memory_type = MemoryType::new(256, Some(256)); // 16 MB fixed, cannot grow
+        let memory_type = MemoryType::new(PLUGIN_MEMORY_PAGES, Some(PLUGIN_MEMORY_PAGES)); // 16 MB fixed, cannot grow
         let memory = Memory::new(&mut store, memory_type)
             .map_err(|e| MediaPipelineError::Export(format!("wasm memory: {e}")))?;
         linker
@@ -92,6 +99,11 @@ impl PluginInstance {
 
         let buf_size = input.len();
 
+        // Validate that buf_size * 2 doesn't overflow and total memory usage fits in 16MB
+        let double_buf = buf_size.checked_mul(2).ok_or_else(|| {
+            MediaPipelineError::Export("plugin buffer size overflow (buf_size * 2)".into())
+        })?;
+
         // Write input to WASM memory at offset 0
         memory
             .write(&mut store, 0, input)
@@ -101,6 +113,13 @@ impl PluginInstance {
         let param_values: Vec<f32> = params.values().copied().collect();
         let params_bytes: Vec<u8> = param_values.iter().flat_map(|v| v.to_le_bytes()).collect();
         let params_offset = buf_size * 2; // after input and output regions
+
+        let params_end = double_buf + params_bytes.len();
+        if params_end > PLUGIN_MAX_MEMORY_BYTES {
+            return Err(MediaPipelineError::Export(
+                "plugin frame + params exceed 16MB WASM memory limit".into(),
+            ));
+        }
         if !params_bytes.is_empty() {
             memory
                 .write(&mut store, params_offset, &params_bytes)
@@ -130,7 +149,7 @@ impl PluginInstance {
         // Handle traps with descriptive errors
         call_result.map_err(|e| {
             let msg = if e.root_cause().to_string().contains("epoch") {
-                format!("plugin execution timed out (5s limit): {e}")
+                format!("plugin execution timed out ({PLUGIN_TIMEOUT_SECS}s limit): {e}")
             } else if let Some(trap) = e.downcast_ref::<Trap>() {
                 format!("plugin trapped ({trap}): {e}")
             } else {

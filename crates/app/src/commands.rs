@@ -67,14 +67,16 @@ pub async fn export_project(
         return Err("timeline is empty — nothing to export".into());
     }
 
-    let _ = app.emit(
+    if let Err(e) = app.emit(
         "export-progress",
         ExportProgress {
             frames_written: 0,
             total_frames,
             done: false,
         },
-    );
+    ) {
+        tracing::warn!("failed to emit event: {e}");
+    }
 
     // Initialize GPU context and renderer
     let gpu_ctx =
@@ -125,14 +127,16 @@ pub async fn export_project(
                 .map_err(|_| "export pipeline closed unexpectedly".to_string())?;
 
             // Emit progress
-            let _ = app_handle.emit(
+            if let Err(e) = app_handle.emit(
                 "export-progress",
                 ExportProgress {
                     frames_written: frame_index + 1,
                     total_frames,
                     done: false,
                 },
-            );
+            ) {
+                tracing::warn!("failed to emit event: {e}");
+            }
         }
         // video_tx drops here, signaling EOS to the export pipeline
         Ok(())
@@ -163,20 +167,24 @@ pub async fn export_project(
     // Wait for export pipeline to signal completion
     while progress_rx.changed().await.is_ok() {
         let progress = progress_rx.borrow().clone();
-        let _ = app.emit("export-progress", &progress);
+        if let Err(e) = app.emit("export-progress", &progress) {
+            tracing::warn!("failed to emit event: {e}");
+        }
         if progress.done {
             break;
         }
     }
 
-    let _ = app.emit(
+    if let Err(e) = app.emit(
         "export-progress",
         ExportProgress {
             frames_written: total_frames,
             total_frames,
             done: true,
         },
-    );
+    ) {
+        tracing::warn!("failed to emit event: {e}");
+    }
 
     Ok(())
 }

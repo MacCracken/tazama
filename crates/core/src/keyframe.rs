@@ -112,6 +112,9 @@ pub fn evaluate(track: &KeyframeTrack, frame: u64) -> Option<f32> {
     let left = &kfs[idx];
     let right = &kfs[idx + 1];
     let span = (right.frame - left.frame) as f32;
+    if span == 0.0 {
+        return Some(left.value);
+    }
     let t = (frame - left.frame) as f32 / span;
 
     match left.interpolation {

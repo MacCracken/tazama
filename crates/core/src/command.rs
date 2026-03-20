@@ -1088,4 +1088,436 @@ mod tests {
         assert_eq!(timeline.multicam_groups.len(), 1);
         assert_eq!(timeline.multicam_groups[0].id, group_id);
     }
+
+    #[test]
+    fn move_clip_redo() {
+        let (mut timeline, mut history) = setup();
+        let track_id = timeline.tracks[0].id;
+        let clip = Clip::new("clip1", ClipKind::Video, 0, 30);
+        let clip_id = clip.id;
+        history
+            .execute(EditCommand::AddClip { track_id, clip }, &mut timeline)
+            .unwrap();
+
+        let cmd = EditCommand::MoveClip {
+            track_id,
+            clip_id,
+            old_start: 0,
+            new_start: 50,
+        };
+        history.execute(cmd, &mut timeline).unwrap();
+        assert_eq!(timeline.tracks[0].clips[0].timeline_start, 50);
+
+        history.undo(&mut timeline).unwrap();
+        assert_eq!(timeline.tracks[0].clips[0].timeline_start, 0);
+
+        history.redo(&mut timeline).unwrap();
+        assert_eq!(timeline.tracks[0].clips[0].timeline_start, 50);
+    }
+
+    #[test]
+    fn trim_clip_redo() {
+        let (mut timeline, mut history) = setup();
+        let track_id = timeline.tracks[0].id;
+        let clip = Clip::new("clip1", ClipKind::Video, 0, 60);
+        let clip_id = clip.id;
+        history
+            .execute(EditCommand::AddClip { track_id, clip }, &mut timeline)
+            .unwrap();
+
+        let cmd = EditCommand::TrimClip {
+            track_id,
+            clip_id,
+            old_offset: 0,
+            old_duration: 60,
+            new_offset: 10,
+            new_duration: 40,
+        };
+        history.execute(cmd, &mut timeline).unwrap();
+        history.undo(&mut timeline).unwrap();
+        history.redo(&mut timeline).unwrap();
+        assert_eq!(timeline.tracks[0].clips[0].source_offset, 10);
+        assert_eq!(timeline.tracks[0].clips[0].duration, 40);
+    }
+
+    #[test]
+    fn split_clip_redo() {
+        let (mut timeline, mut history) = setup();
+        let track_id = timeline.tracks[0].id;
+        let clip = Clip::new("clip1", ClipKind::Video, 0, 60);
+        let clip_id = clip.id;
+        history
+            .execute(EditCommand::AddClip { track_id, clip }, &mut timeline)
+            .unwrap();
+
+        // Split via track to get the generated new_clip_id
+        let track = timeline.track_mut(track_id).unwrap();
+        let original_duration = 60;
+        let new_clip_id = track.split_clip(clip_id, 30).unwrap();
+
+        let split_cmd = EditCommand::SplitClip {
+            track_id,
+            original_id: clip_id,
+            new_clip_id,
+            original_duration,
+            split_frame: 30,
+        };
+        // Undo the split
+        split_cmd.undo(&mut timeline).unwrap();
+        assert_eq!(timeline.tracks[0].clips.len(), 1);
+        assert_eq!(timeline.tracks[0].clips[0].duration, 60);
+
+        // Redo the split
+        split_cmd.apply(&mut timeline).unwrap();
+        assert_eq!(timeline.tracks[0].clips.len(), 2);
+        let left = timeline.tracks[0]
+            .clips
+            .iter()
+            .find(|c| c.id == clip_id)
+            .unwrap();
+        assert_eq!(left.duration, 30);
+    }
+
+    #[test]
+    fn remove_clip_redo() {
+        let (mut timeline, mut history) = setup();
+        let track_id = timeline.tracks[0].id;
+        let clip = Clip::new("clip1", ClipKind::Video, 0, 30);
+        history
+            .execute(
+                EditCommand::AddClip {
+                    track_id,
+                    clip: clip.clone(),
+                },
+                &mut timeline,
+            )
+            .unwrap();
+
+        let cmd = EditCommand::RemoveClip {
+            track_id,
+            clip: clip.clone(),
+        };
+        history.execute(cmd, &mut timeline).unwrap();
+        assert_eq!(timeline.tracks[0].clips.len(), 0);
+
+        history.undo(&mut timeline).unwrap();
+        assert_eq!(timeline.tracks[0].clips.len(), 1);
+
+        history.redo(&mut timeline).unwrap();
+        assert_eq!(timeline.tracks[0].clips.len(), 0);
+    }
+
+    #[test]
+    fn remove_effect_redo() {
+        let (mut timeline, mut history) = setup();
+        let track_id = timeline.tracks[0].id;
+        let clip = Clip::new("clip1", ClipKind::Video, 0, 30);
+        let clip_id = clip.id;
+        history
+            .execute(EditCommand::AddClip { track_id, clip }, &mut timeline)
+            .unwrap();
+
+        let effect =
+            crate::effect::Effect::new(crate::effect::EffectKind::Volume { gain_db: -6.0 });
+        let effect_id = effect.id;
+        history
+            .execute(
+                EditCommand::ApplyEffect {
+                    track_id,
+                    clip_id,
+                    effect: effect.clone(),
+                },
+                &mut timeline,
+            )
+            .unwrap();
+
+        history
+            .execute(
+                EditCommand::RemoveEffect {
+                    track_id,
+                    clip_id,
+                    effect: effect.clone(),
+                },
+                &mut timeline,
+            )
+            .unwrap();
+        assert_eq!(timeline.tracks[0].clips[0].effects.len(), 0);
+
+        history.undo(&mut timeline).unwrap();
+        assert_eq!(timeline.tracks[0].clips[0].effects.len(), 1);
+        assert_eq!(timeline.tracks[0].clips[0].effects[0].id, effect_id);
+
+        history.redo(&mut timeline).unwrap();
+        assert_eq!(timeline.tracks[0].clips[0].effects.len(), 0);
+    }
+
+    #[test]
+    fn remove_marker_redo() {
+        let (mut timeline, mut history) = setup();
+        let marker = crate::marker::Marker::new("m1", 10, crate::marker::MarkerColor::Yellow);
+        let marker_id = marker.id;
+        history
+            .execute(
+                EditCommand::AddMarker {
+                    marker: marker.clone(),
+                },
+                &mut timeline,
+            )
+            .unwrap();
+
+        history
+            .execute(EditCommand::RemoveMarker { marker }, &mut timeline)
+            .unwrap();
+        assert_eq!(timeline.markers.len(), 0);
+
+        history.undo(&mut timeline).unwrap();
+        assert_eq!(timeline.markers.len(), 1);
+        assert_eq!(timeline.markers[0].id, marker_id);
+
+        history.redo(&mut timeline).unwrap();
+        assert_eq!(timeline.markers.len(), 0);
+    }
+
+    #[test]
+    fn remove_track_redo() {
+        let (mut timeline, mut history) = setup();
+        let track_id2 = crate::timeline::TrackId::new();
+        history
+            .execute(
+                EditCommand::AddTrack {
+                    track_id: track_id2,
+                    name: "A1".to_string(),
+                    kind: TrackKind::Audio,
+                },
+                &mut timeline,
+            )
+            .unwrap();
+        assert_eq!(timeline.tracks.len(), 2);
+
+        let cmd = EditCommand::RemoveTrack {
+            track_id: track_id2,
+            index: 1,
+            name: "A1".to_string(),
+            kind: TrackKind::Audio,
+            clips: vec![],
+        };
+        history.execute(cmd, &mut timeline).unwrap();
+        assert_eq!(timeline.tracks.len(), 1);
+
+        history.undo(&mut timeline).unwrap();
+        assert_eq!(timeline.tracks.len(), 2);
+
+        history.redo(&mut timeline).unwrap();
+        assert_eq!(timeline.tracks.len(), 1);
+        assert!(timeline.track(track_id2).is_none());
+    }
+
+    #[test]
+    fn switch_angle_redo() {
+        let (mut timeline, mut history) = setup();
+        let track_id = timeline.tracks[0].id;
+        let old_clip = Clip::new("angle1", ClipKind::Video, 0, 30);
+        let old_clip_id = old_clip.id;
+        timeline
+            .track_mut(track_id)
+            .unwrap()
+            .add_clip(old_clip.clone())
+            .unwrap();
+
+        let new_clip = Clip::new("angle2", ClipKind::Video, 0, 30);
+        let new_clip_id = new_clip.id;
+        let cmd = EditCommand::SwitchAngle {
+            track_id,
+            old_clip: Some(Box::new(old_clip)),
+            new_clip: Box::new(new_clip),
+        };
+        history.execute(cmd, &mut timeline).unwrap();
+        assert_eq!(timeline.tracks[0].clips[0].id, new_clip_id);
+
+        history.undo(&mut timeline).unwrap();
+        assert_eq!(timeline.tracks[0].clips[0].id, old_clip_id);
+
+        history.redo(&mut timeline).unwrap();
+        assert_eq!(timeline.tracks[0].clips.len(), 1);
+        assert_eq!(timeline.tracks[0].clips[0].id, new_clip_id);
+    }
+
+    #[test]
+    fn set_track_pan_redo() {
+        let (mut timeline, mut history) = setup();
+        let track_id = timeline.tracks[0].id;
+
+        let cmd = EditCommand::SetTrackPan {
+            track_id,
+            old_pan: 0.0,
+            new_pan: -0.75,
+        };
+        history.execute(cmd, &mut timeline).unwrap();
+        assert!((timeline.tracks[0].pan - (-0.75)).abs() < 1e-6);
+
+        history.undo(&mut timeline).unwrap();
+        assert!((timeline.tracks[0].pan - 0.0).abs() < 1e-6);
+
+        history.redo(&mut timeline).unwrap();
+        assert!((timeline.tracks[0].pan - (-0.75)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn set_keyframes_redo() {
+        let (mut timeline, mut history) = setup();
+        let track_id = timeline.tracks[0].id;
+        let clip = Clip::new("clip1", ClipKind::Video, 0, 30);
+        let clip_id = clip.id;
+        history
+            .execute(EditCommand::AddClip { track_id, clip }, &mut timeline)
+            .unwrap();
+
+        let effect = crate::effect::Effect::new(crate::effect::EffectKind::Speed { factor: 1.0 });
+        history
+            .execute(
+                EditCommand::ApplyEffect {
+                    track_id,
+                    clip_id,
+                    effect,
+                },
+                &mut timeline,
+            )
+            .unwrap();
+
+        let mut new_track = crate::keyframe::KeyframeTrack::new("speed");
+        new_track.add_keyframe(crate::keyframe::Keyframe::new(
+            0,
+            1.0,
+            crate::keyframe::Interpolation::Linear,
+        ));
+        let new_tracks = vec![new_track];
+
+        let cmd = EditCommand::SetKeyframes {
+            track_id,
+            clip_id,
+            effect_index: 0,
+            old_tracks: vec![],
+            new_tracks: new_tracks.clone(),
+        };
+        history.execute(cmd, &mut timeline).unwrap();
+        assert_eq!(
+            timeline.tracks[0].clips[0].effects[0].keyframe_tracks.len(),
+            1
+        );
+
+        history.undo(&mut timeline).unwrap();
+        assert_eq!(
+            timeline.tracks[0].clips[0].effects[0].keyframe_tracks.len(),
+            0
+        );
+
+        history.redo(&mut timeline).unwrap();
+        assert_eq!(
+            timeline.tracks[0].clips[0].effects[0].keyframe_tracks.len(),
+            1
+        );
+        assert_eq!(
+            timeline.tracks[0].clips[0].effects[0].keyframe_tracks[0]
+                .keyframes
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn complex_undo_redo_sequence() {
+        let (mut timeline, mut history) = setup();
+        let track_id = timeline.tracks[0].id;
+
+        // Step 1: AddClip
+        let clip = Clip::new("clip1", ClipKind::Video, 0, 60);
+        let clip_id = clip.id;
+        history
+            .execute(
+                EditCommand::AddClip {
+                    track_id,
+                    clip: clip.clone(),
+                },
+                &mut timeline,
+            )
+            .unwrap();
+        assert_eq!(timeline.tracks[0].clips.len(), 1);
+
+        // Step 2: ApplyEffect
+        let effect = crate::effect::Effect::new(crate::effect::EffectKind::Speed { factor: 2.0 });
+        let effect_id = effect.id;
+        history
+            .execute(
+                EditCommand::ApplyEffect {
+                    track_id,
+                    clip_id,
+                    effect: effect.clone(),
+                },
+                &mut timeline,
+            )
+            .unwrap();
+        assert_eq!(timeline.tracks[0].clips[0].effects.len(), 1);
+
+        // Step 3: SetKeyframes
+        let mut kf_track = crate::keyframe::KeyframeTrack::new("speed");
+        kf_track.add_keyframe(crate::keyframe::Keyframe::new(
+            0,
+            1.0,
+            crate::keyframe::Interpolation::Linear,
+        ));
+        kf_track.add_keyframe(crate::keyframe::Keyframe::new(
+            30,
+            2.0,
+            crate::keyframe::Interpolation::Linear,
+        ));
+        let new_tracks = vec![kf_track];
+        history
+            .execute(
+                EditCommand::SetKeyframes {
+                    track_id,
+                    clip_id,
+                    effect_index: 0,
+                    old_tracks: vec![],
+                    new_tracks: new_tracks.clone(),
+                },
+                &mut timeline,
+            )
+            .unwrap();
+        assert_eq!(
+            timeline.tracks[0].clips[0].effects[0].keyframe_tracks.len(),
+            1
+        );
+
+        // Undo all 3
+        history.undo(&mut timeline).unwrap(); // undo SetKeyframes
+        assert_eq!(
+            timeline.tracks[0].clips[0].effects[0].keyframe_tracks.len(),
+            0
+        );
+        history.undo(&mut timeline).unwrap(); // undo ApplyEffect
+        assert_eq!(timeline.tracks[0].clips[0].effects.len(), 0);
+        history.undo(&mut timeline).unwrap(); // undo AddClip
+        assert_eq!(timeline.tracks[0].clips.len(), 0);
+
+        // Redo all 3
+        history.redo(&mut timeline).unwrap(); // redo AddClip
+        assert_eq!(timeline.tracks[0].clips.len(), 1);
+        assert_eq!(timeline.tracks[0].clips[0].id, clip_id);
+
+        history.redo(&mut timeline).unwrap(); // redo ApplyEffect
+        assert_eq!(timeline.tracks[0].clips[0].effects.len(), 1);
+        assert_eq!(timeline.tracks[0].clips[0].effects[0].id, effect_id);
+
+        history.redo(&mut timeline).unwrap(); // redo SetKeyframes
+        assert_eq!(
+            timeline.tracks[0].clips[0].effects[0].keyframe_tracks.len(),
+            1
+        );
+        assert_eq!(
+            timeline.tracks[0].clips[0].effects[0].keyframe_tracks[0]
+                .keyframes
+                .len(),
+            2
+        );
+    }
 }

@@ -88,7 +88,10 @@ impl GpuBuffer {
 
     /// Compute the buffer size for an RGBA frame.
     pub fn frame_buffer_size(width: u32, height: u32) -> u64 {
-        width as u64 * height as u64 * 4
+        (width as u64)
+            .checked_mul(height as u64)
+            .and_then(|v| v.checked_mul(4))
+            .expect("frame dimensions overflow buffer size")
     }
 
     pub fn vk_buffer(&self) -> vk::Buffer {

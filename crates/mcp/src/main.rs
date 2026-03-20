@@ -10,6 +10,17 @@ use tazama_core::{
     MediaRef, Project, ProjectSettings, Timeline, Track, TrackKind,
 };
 
+/// Reject paths containing traversal components (`..`) or absolute paths.
+fn validate_user_path(path: &str) -> Result<&str, String> {
+    let p = std::path::Path::new(path);
+    for component in p.components() {
+        if matches!(component, std::path::Component::ParentDir) {
+            return Err("path must not contain '..' components".into());
+        }
+    }
+    Ok(path)
+}
+
 /// MCP tools exposed by Tazama:
 ///
 /// 1. tazama_create_project  — Create a new video project
@@ -98,6 +109,15 @@ async fn main() -> Result<()> {
         let n = reader.read_line(&mut line).await?;
         if n == 0 {
             break;
+        }
+
+        const MAX_MESSAGE_SIZE: usize = 50 * 1024 * 1024; // 50 MB
+        if line.len() > MAX_MESSAGE_SIZE {
+            tracing::warn!(
+                "incoming JSON message exceeds 50MB limit ({}B), skipping",
+                line.len()
+            );
+            continue;
         }
 
         let request: Value = match serde_json::from_str(line.trim()) {
@@ -270,6 +290,13 @@ fn handle_create_project(id: &Value, args: &Value, state: &mut ServerState) -> V
     let width = args.get("width").and_then(|v| v.as_u64()).unwrap_or(1920) as u32;
     let height = args.get("height").and_then(|v| v.as_u64()).unwrap_or(1080) as u32;
 
+    if width == 0 || height == 0 || width > 8192 || height > 8192 {
+        return mcp_error(
+            id,
+            format!("Invalid dimensions: {width}x{height}. Width and height must be 1..=8192."),
+        );
+    }
+
     let settings = ProjectSettings {
         width,
         height,
@@ -309,6 +336,10 @@ async fn handle_add_clip(id: &Value, args: &Value, state: &mut ServerState) -> V
         Some(s) => s,
         None => return mcp_error(id, "Missing required parameter: source"),
     };
+
+    if let Err(e) = validate_user_path(source) {
+        return mcp_error(id, format!("Invalid source path: {e}"));
+    }
 
     // Find track by name or ID
     let track_id = match find_track_id(&project.timeline, track_name) {
@@ -452,6 +483,10 @@ async fn handle_export(id: &Value, args: &Value, state: &ServerState) -> Value {
         None => return mcp_error(id, "Missing required parameter: output_path"),
     };
 
+    if let Err(e) = validate_user_path(output_path) {
+        return mcp_error(id, format!("Invalid output path: {e}"));
+    }
+
     let format_str = args.get("format").and_then(|f| f.as_str()).unwrap_or("mp4");
 
     let format = match format_str {
@@ -484,6 +519,7 @@ async fn handle_export(id: &Value, args: &Value, state: &ServerState) -> Value {
         channels: project.settings.channels,
         audio_codec: None,
         hardware_accel: false,
+        encoder: tazama_media::ExportEncoder::default(),
     };
 
     // Create video/audio channels for the export pipeline
@@ -577,6 +613,10 @@ async fn handle_extract_frame(id: &Value, args: &Value, state: &ServerState) -> 
         None => return mcp_error(id, "Missing required parameter: output_path"),
     };
 
+    if let Err(e) = validate_user_path(output_path) {
+        return mcp_error(id, format!("Invalid output path: {e}"));
+    }
+
     let (_, clip) = match project.timeline.find_clip(clip_id) {
         Some(r) => r,
         None => return mcp_error(id, format!("Clip not found: {clip_id_str}")),
@@ -607,6 +647,21 @@ async fn handle_extract_frame(id: &Value, args: &Value, state: &ServerState) -> 
         Ok(f) => f,
         Err(e) => return mcp_error(id, format!("Failed to decode frame: {e}")),
     };
+
+    // Validate frame data length before constructing image buffer
+    let expected_len = frame.width as usize * frame.height as usize * 4;
+    if frame.data.len() != expected_len {
+        return mcp_error(
+            id,
+            format!(
+                "frame data length mismatch: expected {} bytes ({}x{}x4), got {}",
+                expected_len,
+                frame.width,
+                frame.height,
+                frame.data.len()
+            ),
+        );
+    }
 
     // Convert RGBA bytes to PNG using the image crate
     let img: image::ImageBuffer<image::Rgba<u8>, Vec<u8>> =
@@ -801,19 +856,20 @@ mod tests {
         let params =
             json!({ "brightness": 0.5, "contrast": 1.2, "saturation": 0.8, "temperature": -0.1 });
         let kind = parse_effect_kind("color_grade", &params).unwrap();
-        match kind {
-            EffectKind::ColorGrade {
-                brightness,
-                contrast,
-                saturation,
-                temperature,
-            } => {
-                assert!((brightness - 0.5).abs() < f32::EPSILON);
-                assert!((contrast - 1.2).abs() < f32::EPSILON);
-                assert!((saturation - 0.8).abs() < f32::EPSILON);
-                assert!((temperature - (-0.1)).abs() < f32::EPSILON);
-            }
-            _ => panic!("expected ColorGrade"),
+        assert!(matches!(kind, EffectKind::ColorGrade { .. }));
+        if let EffectKind::ColorGrade {
+            brightness,
+            contrast,
+            saturation,
+            temperature,
+        } = &kind
+        {
+            assert!((brightness - 0.5).abs() < f32::EPSILON);
+            assert!((contrast - 1.2).abs() < f32::EPSILON);
+            assert!((saturation - 0.8).abs() < f32::EPSILON);
+            assert!((temperature - (-0.1)).abs() < f32::EPSILON);
+        } else {
+            unreachable!();
         }
     }
 
@@ -821,19 +877,20 @@ mod tests {
     fn test_parse_effect_color_grade_defaults() {
         let params = json!({});
         let kind = parse_effect_kind("color_grade", &params).unwrap();
-        match kind {
-            EffectKind::ColorGrade {
-                brightness,
-                contrast,
-                saturation,
-                temperature,
-            } => {
-                assert!((brightness - 0.0).abs() < f32::EPSILON);
-                assert!((contrast - 1.0).abs() < f32::EPSILON);
-                assert!((saturation - 1.0).abs() < f32::EPSILON);
-                assert!((temperature - 0.0).abs() < f32::EPSILON);
-            }
-            _ => panic!("expected ColorGrade"),
+        assert!(matches!(kind, EffectKind::ColorGrade { .. }));
+        if let EffectKind::ColorGrade {
+            brightness,
+            contrast,
+            saturation,
+            temperature,
+        } = &kind
+        {
+            assert!((brightness - 0.0).abs() < f32::EPSILON);
+            assert!((contrast - 1.0).abs() < f32::EPSILON);
+            assert!((saturation - 1.0).abs() < f32::EPSILON);
+            assert!((temperature - 0.0).abs() < f32::EPSILON);
+        } else {
+            unreachable!();
         }
     }
 
@@ -841,19 +898,20 @@ mod tests {
     fn test_parse_effect_crop() {
         let params = json!({ "left": 0.1, "top": 0.2, "right": 0.3, "bottom": 0.4 });
         let kind = parse_effect_kind("crop", &params).unwrap();
-        match kind {
-            EffectKind::Crop {
-                left,
-                top,
-                right,
-                bottom,
-            } => {
-                assert!((left - 0.1).abs() < f32::EPSILON);
-                assert!((top - 0.2).abs() < f32::EPSILON);
-                assert!((right - 0.3).abs() < f32::EPSILON);
-                assert!((bottom - 0.4).abs() < f32::EPSILON);
-            }
-            _ => panic!("expected Crop"),
+        assert!(matches!(kind, EffectKind::Crop { .. }));
+        if let EffectKind::Crop {
+            left,
+            top,
+            right,
+            bottom,
+        } = &kind
+        {
+            assert!((left - 0.1).abs() < f32::EPSILON);
+            assert!((top - 0.2).abs() < f32::EPSILON);
+            assert!((right - 0.3).abs() < f32::EPSILON);
+            assert!((bottom - 0.4).abs() < f32::EPSILON);
+        } else {
+            unreachable!();
         }
     }
 

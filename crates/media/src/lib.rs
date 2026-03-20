@@ -20,7 +20,7 @@ use std::sync::Once;
 
 pub use decode::{AudioBuffer, DecoderConfig, FrameRange, VideoFrame};
 pub use error::MediaPipelineError;
-pub use export::{ExportConfig, ExportFormat, ExportProgress};
+pub use export::{ExportConfig, ExportEncoder, ExportFormat, ExportProgress, available_encoders};
 pub use playback::AudioPreview;
 
 static GST_INIT: Once = Once::new();

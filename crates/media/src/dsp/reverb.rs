@@ -16,6 +16,10 @@ pub fn apply_reverb(
     damping: f32,
     wet: f32,
 ) {
+    let room_size = room_size.clamp(0.0, 1.0);
+    let damping = damping.clamp(0.0, 1.0);
+    let wet = wet.clamp(0.0, 1.0);
+
     if samples.is_empty() || channels == 0 || sample_rate == 0 || wet <= 0.0 {
         return;
     }
@@ -26,10 +30,9 @@ pub fn apply_reverb(
         return;
     }
 
-    let wet = wet.clamp(0.0, 1.0);
     let dry = 1.0 - wet;
-    let feedback = room_size.clamp(0.0, 1.0) * 0.9 + 0.05; // map to [0.05, 0.95]
-    let damp = damping.clamp(0.0, 1.0);
+    let feedback = room_size * 0.9 + 0.05; // map to [0.05, 0.95]
+    let damp = damping;
 
     // Process each channel independently
     for c in 0..ch {
@@ -58,14 +61,17 @@ fn process_channel(
 
     // Comb filter delay lengths (in samples), from Schroeder/Moorer design
     let comb_lengths: [usize; 4] = [
-        (1557.0 * scale) as usize,
-        (1617.0 * scale) as usize,
-        (1491.0 * scale) as usize,
-        (1422.0 * scale) as usize,
+        ((1557.0 * scale) as usize).max(4),
+        ((1617.0 * scale) as usize).max(4),
+        ((1491.0 * scale) as usize).max(4),
+        ((1422.0 * scale) as usize).max(4),
     ];
 
     // Allpass filter delay lengths
-    let allpass_lengths: [usize; 2] = [(225.0 * scale) as usize, (556.0 * scale) as usize];
+    let allpass_lengths: [usize; 2] = [
+        ((225.0 * scale) as usize).max(4),
+        ((556.0 * scale) as usize).max(4),
+    ];
 
     let mut combs: Vec<CombFilter> = comb_lengths
         .iter()
@@ -118,7 +124,7 @@ struct CombFilter {
 impl CombFilter {
     fn new(delay_len: usize, feedback: f32, damp: f32) -> Self {
         Self {
-            buffer: vec![0.0; delay_len.max(1)],
+            buffer: vec![0.0; delay_len.max(4)],
             index: 0,
             feedback,
             damp,
@@ -149,7 +155,7 @@ struct AllpassFilter {
 impl AllpassFilter {
     fn new(delay_len: usize) -> Self {
         Self {
-            buffer: vec![0.0; delay_len.max(1)],
+            buffer: vec![0.0; delay_len.max(4)],
             index: 0,
         }
     }
@@ -316,6 +322,25 @@ mod tests {
         // Should still produce some output (low frequencies pass through damping)
         let energy: f64 = samples[1000..].iter().map(|s| (*s as f64).powi(2)).sum();
         assert!(energy > 1e-10, "max damping should still produce a tail");
+    }
+
+    #[test]
+    fn nan_input_no_panic() {
+        let mut samples = vec![f32::NAN; 4096];
+        apply_reverb(&mut samples, 48000, 1, 0.5, 0.5, 0.5);
+        // Reverb on NaN input won't produce finite output (NaN propagates through arithmetic),
+        // but it must not panic
+    }
+
+    #[test]
+    fn out_of_range_params_are_clamped() {
+        let mut samples = vec![0.0f32; 4096];
+        samples[0] = 1.0;
+        // Parameters outside [0,1] should be clamped, not panic
+        apply_reverb(&mut samples, 48000, 1, 5.0, -1.0, 2.0);
+        for s in &samples {
+            assert!(s.is_finite(), "clamped params should produce finite output");
+        }
     }
 
     #[test]

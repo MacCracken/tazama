@@ -14,6 +14,8 @@ pub enum DbError {
     Serde(#[from] serde_json::Error),
     #[error("project not found: {0}")]
     ProjectNotFound(String),
+    #[error("{0}")]
+    Other(String),
 }
 
 #[derive(Clone)]
@@ -53,9 +55,16 @@ impl Database {
         .fetch_optional(&self.pool)
         .await?;
 
+        const MAX_JSON_SIZE: usize = 50 * 1024 * 1024; // 50 MB
+
         match row {
             Some(row) => {
                 let json: String = row.get("media_info");
+                if json.len() > MAX_JSON_SIZE {
+                    return Err(DbError::Other(
+                        "JSON data exceeds maximum size of 50MB".into(),
+                    ));
+                }
                 let info: MediaInfo = serde_json::from_str(&json)?;
                 Ok(Some(info))
             }
@@ -110,9 +119,16 @@ impl Database {
             .fetch_optional(&self.pool)
             .await?;
 
+        const MAX_JSON_SIZE: usize = 50 * 1024 * 1024; // 50 MB
+
         match row {
             Some(row) => {
                 let json: String = row.get("project_json");
+                if json.len() > MAX_JSON_SIZE {
+                    return Err(DbError::Other(
+                        "JSON data exceeds maximum size of 50MB".into(),
+                    ));
+                }
                 let project: Project = serde_json::from_str(&json)?;
                 Ok(project)
             }

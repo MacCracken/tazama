@@ -8,6 +8,8 @@ use super::{ExportConfig, ExportEncoder, ExportFormat, ExportProgress};
 use crate::decode::{AudioBuffer, VideoFrame};
 use crate::error::MediaPipelineError;
 
+const EXPORT_BUS_TIMEOUT_SECS: u64 = 120;
+
 /// Manages a GStreamer export pipeline that muxes video and audio into an output file.
 pub struct ExportPipeline;
 
@@ -111,27 +113,21 @@ fn run_export(
         .build()
         .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
 
+    let is_gif = config.format == ExportFormat::Gif;
+
     // Encoder + muxer based on format
+    // For GIF: gifenc acts as a combined encoder+muxer, no audio track.
+    // For all other formats: separate video encoder, audio encoder, and muxer.
     let (video_enc, audio_enc, muxer) = match config.format {
         ExportFormat::Mp4 => {
-            let venc = if config.hardware_accel {
-                try_hw_encoder().unwrap_or(
-                    gstreamer::ElementFactory::make("x264enc")
-                        .build()
-                        .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?,
-                )
-            } else {
-                gstreamer::ElementFactory::make("x264enc")
-                    .build()
-                    .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?
-            };
+            let venc = select_h264_encoder(&config.encoder)?;
             let aenc = gstreamer::ElementFactory::make("voaacenc")
                 .build()
                 .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
             let mux = gstreamer::ElementFactory::make("mp4mux")
                 .build()
                 .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
-            (venc, aenc, mux)
+            (venc, Some(aenc), mux)
         }
         ExportFormat::WebM => {
             let venc = gstreamer::ElementFactory::make("vp9enc")
@@ -143,7 +139,7 @@ fn run_export(
             let mux = gstreamer::ElementFactory::make("webmmux")
                 .build()
                 .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
-            (venc, aenc, mux)
+            (venc, Some(aenc), mux)
         }
         ExportFormat::ProRes => {
             let venc = gstreamer::ElementFactory::make("avenc_prores_ks")
@@ -155,7 +151,7 @@ fn run_export(
             let mux = gstreamer::ElementFactory::make("qtmux")
                 .build()
                 .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
-            (venc, aenc, mux)
+            (venc, Some(aenc), mux)
         }
         ExportFormat::DnxHr => {
             let venc = gstreamer::ElementFactory::make("avenc_dnxhd")
@@ -167,32 +163,36 @@ fn run_export(
             let mux = gstreamer::ElementFactory::make("qtmux")
                 .build()
                 .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
-            (venc, aenc, mux)
+            (venc, Some(aenc), mux)
         }
         ExportFormat::Mkv => {
-            let venc = gstreamer::ElementFactory::make("x264enc")
-                .build()
-                .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
+            let venc = select_h264_encoder(&config.encoder)?;
             let aenc = gstreamer::ElementFactory::make("opusenc")
                 .build()
                 .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
             let mux = gstreamer::ElementFactory::make("matroskamux")
                 .build()
                 .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
-            (venc, aenc, mux)
+            (venc, Some(aenc), mux)
         }
         ExportFormat::Gif => {
-            // GIF has no audio; use the same as MP4 and let the muxer handle it
-            let venc = gstreamer::ElementFactory::make("x264enc")
+            // GIF: gifenc is a combined encoder+muxer element. No audio.
+            // We put gifenc in the "muxer" slot and use a dummy identity for video_enc
+            // so the pipeline linking logic stays consistent.
+            let gifenc = gstreamer::ElementFactory::make("gifenc")
+                .build()
+                .map_err(|e| {
+                    error!("gifenc element not available: {e}. Install gst-plugins-good.");
+                    MediaPipelineError::Gstreamer(format!(
+                        "GIF export requires the 'gifenc' GStreamer element \
+                         (part of gst-plugins-good): {e}"
+                    ))
+                })?;
+            // identity element passes through video frames unchanged
+            let identity = gstreamer::ElementFactory::make("identity")
                 .build()
                 .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
-            let aenc = gstreamer::ElementFactory::make("voaacenc")
-                .build()
-                .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
-            let mux = gstreamer::ElementFactory::make("mp4mux")
-                .build()
-                .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
-            (venc, aenc, mux)
+            (identity, None, gifenc)
         }
     };
 
@@ -201,18 +201,31 @@ fn run_export(
         .build()
         .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
 
-    pipeline
-        .add_many([
-            video_appsrc.upcast_ref::<gstreamer::Element>(),
-            &videoconvert,
-            &video_enc,
-            audio_appsrc.upcast_ref::<gstreamer::Element>(),
-            &audioconvert,
-            &audio_enc,
-            &muxer,
-            &filesink,
-        ])
-        .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
+    // Build element list depending on whether we have audio (GIF does not)
+    if let Some(ref aenc) = audio_enc {
+        pipeline
+            .add_many([
+                video_appsrc.upcast_ref::<gstreamer::Element>(),
+                &videoconvert,
+                &video_enc,
+                audio_appsrc.upcast_ref::<gstreamer::Element>(),
+                &audioconvert,
+                aenc,
+                &muxer,
+                &filesink,
+            ])
+            .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
+    } else {
+        pipeline
+            .add_many([
+                video_appsrc.upcast_ref::<gstreamer::Element>(),
+                &videoconvert,
+                &video_enc,
+                &muxer,
+                &filesink,
+            ])
+            .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
+    }
 
     // Link video: appsrc -> videoconvert -> encoder -> muxer
     video_appsrc
@@ -225,16 +238,17 @@ fn run_export(
         .link(&muxer)
         .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
 
-    // Link audio: appsrc -> audioconvert -> encoder -> muxer
-    audio_appsrc
-        .link(&audioconvert)
-        .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
-    audioconvert
-        .link(&audio_enc)
-        .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
-    audio_enc
-        .link(&muxer)
-        .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
+    // Link audio: appsrc -> audioconvert -> encoder -> muxer (skip for GIF)
+    if let Some(ref aenc) = audio_enc {
+        audio_appsrc
+            .link(&audioconvert)
+            .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
+        audioconvert
+            .link(aenc)
+            .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
+        aenc.link(&muxer)
+            .map_err(|e| MediaPipelineError::Gstreamer(e.to_string()))?;
+    }
 
     // Link muxer -> filesink
     muxer
@@ -244,6 +258,17 @@ fn run_export(
     pipeline
         .set_state(gstreamer::State::Playing)
         .map_err(|e| MediaPipelineError::StateChange(e.to_string()))?;
+
+    // Verify the pipeline actually reached Playing state
+    let (result, _current, _pending) = pipeline.state(gstreamer::ClockTime::from_seconds(10));
+    if result.is_err() {
+        pipeline
+            .set_state(gstreamer::State::Null)
+            .map_err(|e| MediaPipelineError::StateChange(e.to_string()))?;
+        return Err(MediaPipelineError::StateChange(
+            "pipeline failed to reach Playing state".into(),
+        ));
+    }
 
     info!("export pipeline started: {:?}", config.output_path);
 
@@ -278,44 +303,51 @@ fn run_export(
         .end_of_stream()
         .map_err(|e| MediaPipelineError::Export(e.to_string()))?;
 
-    // Feed audio buffers
-    while let Some(audio_buf) = audio_rx.blocking_recv() {
-        let byte_data: Vec<u8> = audio_buf
-            .samples
-            .iter()
-            .flat_map(|s| s.to_le_bytes())
-            .collect();
+    // Feed audio buffers (skip for GIF which has no audio track)
+    if !is_gif {
+        while let Some(audio_buf) = audio_rx.blocking_recv() {
+            let byte_data: Vec<u8> = audio_buf
+                .samples
+                .iter()
+                .flat_map(|s| s.to_le_bytes())
+                .collect();
 
-        if byte_data.is_empty() {
-            continue;
+            if byte_data.is_empty() {
+                continue;
+            }
+
+            let mut gst_buffer = gstreamer::Buffer::with_size(byte_data.len()).map_err(|_| {
+                MediaPipelineError::Export("failed to allocate audio buffer".into())
+            })?;
+            {
+                let buffer_ref = gst_buffer.get_mut().ok_or_else(|| {
+                    MediaPipelineError::Export("audio buffer not writable".into())
+                })?;
+                buffer_ref.set_pts(gstreamer::ClockTime::from_nseconds(audio_buf.timestamp_ns));
+                let mut map = buffer_ref
+                    .map_writable()
+                    .map_err(|_| MediaPipelineError::Export("failed to map audio buffer".into()))?;
+                map.copy_from_slice(&byte_data);
+            }
+
+            audio_appsrc
+                .push_buffer(gst_buffer)
+                .map_err(|e| MediaPipelineError::Export(e.to_string()))?;
         }
-
-        let mut gst_buffer = gstreamer::Buffer::with_size(byte_data.len())
-            .map_err(|_| MediaPipelineError::Export("failed to allocate audio buffer".into()))?;
-        {
-            let buffer_ref = gst_buffer
-                .get_mut()
-                .ok_or_else(|| MediaPipelineError::Export("audio buffer not writable".into()))?;
-            buffer_ref.set_pts(gstreamer::ClockTime::from_nseconds(audio_buf.timestamp_ns));
-            let mut map = buffer_ref
-                .map_writable()
-                .map_err(|_| MediaPipelineError::Export("failed to map audio buffer".into()))?;
-            map.copy_from_slice(&byte_data);
-        }
-
         audio_appsrc
-            .push_buffer(gst_buffer)
+            .end_of_stream()
             .map_err(|e| MediaPipelineError::Export(e.to_string()))?;
+    } else {
+        // Drain the audio channel for GIF (audio is discarded)
+        while audio_rx.blocking_recv().is_some() {}
+        debug!("GIF export: audio track discarded");
     }
-    audio_appsrc
-        .end_of_stream()
-        .map_err(|e| MediaPipelineError::Export(e.to_string()))?;
 
     // Wait for EOS on the bus
     let bus = pipeline
         .bus()
         .ok_or_else(|| MediaPipelineError::Export("pipeline has no bus".into()))?;
-    for msg in bus.iter_timed(gstreamer::ClockTime::from_seconds(120)) {
+    for msg in bus.iter_timed(gstreamer::ClockTime::from_seconds(EXPORT_BUS_TIMEOUT_SECS)) {
         match msg.view() {
             gstreamer::MessageView::Eos(..) => {
                 debug!("export pipeline received EOS");
@@ -343,19 +375,97 @@ fn run_export(
     Ok(())
 }
 
+/// Select an H.264 encoder based on the user's encoder preference.
+///
+/// Respects the `ExportEncoder` setting:
+/// - `Auto`: try VAAPI -> NVENC -> x264enc (software)
+/// - `Software`: use x264enc directly
+/// - `Vaapi`: try VAAPI only, error if unavailable
+/// - `Nvenc`: try NVENC only, error if unavailable
+/// - `Tarang`: return error directing to TarangExportPipeline
+fn select_h264_encoder(
+    encoder_pref: &ExportEncoder,
+) -> Result<gstreamer::Element, MediaPipelineError> {
+    match encoder_pref {
+        ExportEncoder::Auto => {
+            if let Some(hw) = try_hw_encoder() {
+                Ok(hw)
+            } else {
+                gstreamer::ElementFactory::make("x264enc")
+                    .build()
+                    .map_err(|e| MediaPipelineError::Gstreamer(format!("x264enc: {e}")))
+            }
+        }
+        ExportEncoder::Software => {
+            info!("using software encoder (x264enc) per user preference");
+            gstreamer::ElementFactory::make("x264enc")
+                .build()
+                .map_err(|e| MediaPipelineError::Gstreamer(format!("x264enc: {e}")))
+        }
+        ExportEncoder::Vaapi => {
+            info!("attempting VAAPI encoder per user preference");
+            gstreamer::ElementFactory::make("vaapih264enc")
+                .build()
+                .map_err(|e| {
+                    error!("VAAPI encoder requested but unavailable: {e}");
+                    MediaPipelineError::Gstreamer(format!(
+                        "VAAPI encoder (vaapih264enc) unavailable: {e}. \
+                         Check that gstreamer-vaapi is installed and your GPU supports VAAPI."
+                    ))
+                })
+        }
+        ExportEncoder::Nvenc => {
+            info!("attempting NVENC encoder per user preference");
+            gstreamer::ElementFactory::make("nvh264enc")
+                .build()
+                .map_err(|e| {
+                    error!("NVENC encoder requested but unavailable: {e}");
+                    MediaPipelineError::Gstreamer(format!(
+                        "NVENC encoder (nvh264enc) unavailable: {e}. \
+                         Check that gst-plugins-bad is installed and you have an NVIDIA GPU with NVENC support."
+                    ))
+                })
+        }
+        ExportEncoder::Tarang => {
+            // Tarang encoding should be routed through TarangExportPipeline,
+            // not through the GStreamer pipeline.
+            Err(MediaPipelineError::Export(
+                "Tarang encoder was requested but this codepath uses the GStreamer pipeline. \
+                 Use TarangExportPipeline instead."
+                    .into(),
+            ))
+        }
+    }
+}
+
 /// Attempt to create a hardware H.264 encoder element.
 ///
 /// Tries VAAPI first, then NVENC.  Returns `None` when neither is available,
 /// letting the caller fall back to software x264enc.
 fn try_hw_encoder() -> Option<gstreamer::Element> {
-    let candidates = ["vaapih264enc", "nvh264enc"];
-    for name in &candidates {
-        if let Ok(elem) = gstreamer::ElementFactory::make(name).build() {
-            info!("using hardware encoder: {name}");
+    // Try VAAPI
+    match gstreamer::ElementFactory::make("vaapih264enc").build() {
+        Ok(elem) => {
+            info!("using VAAPI hardware encoder (vaapih264enc)");
             return Some(elem);
         }
+        Err(e) => {
+            debug!("VAAPI encoder not available: {e}");
+        }
     }
-    info!("no hardware encoder available, using software x264enc");
+
+    // Try NVENC
+    match gstreamer::ElementFactory::make("nvh264enc").build() {
+        Ok(elem) => {
+            info!("using NVENC hardware encoder (nvh264enc)");
+            return Some(elem);
+        }
+        Err(e) => {
+            debug!("NVENC encoder not available: {e}");
+        }
+    }
+
+    info!("no hardware encoder available, falling back to software x264enc");
     None
 }
 
@@ -372,5 +482,21 @@ mod tests {
         // We don't assert None because a CI machine *might* have VAAPI/NVENC.
         // The important thing is it doesn't panic.
         drop(result);
+    }
+
+    #[test]
+    fn select_h264_encoder_software() {
+        gstreamer::init().ok();
+        // Software encoder (x264enc) should always be available in test
+        let result = select_h264_encoder(&ExportEncoder::Software);
+        // x264enc might not be installed in minimal CI; just verify no panic
+        drop(result);
+    }
+
+    #[test]
+    fn select_h264_encoder_tarang_errors() {
+        gstreamer::init().ok();
+        let result = select_h264_encoder(&ExportEncoder::Tarang);
+        assert!(result.is_err(), "Tarang should error in GStreamer pipeline");
     }
 }

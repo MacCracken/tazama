@@ -182,11 +182,12 @@ fn probe_tarang_video(path: &Path) -> Result<MediaInfo, MediaPipelineError> {
     let n = file.read(&mut header)?;
     drop(file);
 
-    let format =
-        tarang::demux::detect_format(&header[..n]).map_err(|e| MediaPipelineError::ProbeFailed {
+    let format = tarang::demux::detect_format(&header[..n]).map_err(|e| {
+        MediaPipelineError::ProbeFailed {
             path: path.display().to_string(),
             reason: e.to_string(),
-        })?;
+        }
+    })?;
 
     let file = std::fs::File::open(path)?;
     let reader = std::io::BufReader::new(file);

@@ -12,6 +12,42 @@
   - Added to both `tazama-media` and `tazama-gpu` — always-on, OS-agnostic, best-effort detection
   - Zero vendor SDK compile-time dependencies
 
+### P1 Code Quality (7 items)
+- **Test assertions** — replaced 11 `panic!()` assertions with `assert!(matches!(...))` in effect.rs and MCP tests
+- **Magic constants** — extracted named constants for WASM timeout (5s), export bus timeout (120s), WASM memory (16MB/256 pages), compute workgroup size (256)
+- **apply_effect refactor** — 10 individual parameters replaced with `EffectContext` struct, returns `Option<GpuBuffer>` for cleaner ownership
+- **JSON size limits** — 50MB cap on deserialization in database cache, project loading, and MCP message parsing
+- **GStreamer state validation** — export pipeline now verifies Playing state with 10-second timeout after set
+- **Proxy TOCTOU fix** — replaced `exists()` + `metadata()` race with single `metadata()` match on NotFound
+- **Emit error logging** — all 4 `let _ = app.emit(...)` instances now log warnings on failure
+
+### Security Audit Fixes
+- **MCP path traversal** — added `validate_user_path()` rejecting `..` components in add_clip source, export output, and extract_frame output paths
+- **MCP input validation** — project width/height clamped to 1–8192 range
+- **Integer overflow protection** — checked arithmetic in frame buffer size (gpu), WAV header (record), crop parameters clamped to [0.0, 1.0] with saturating_add
+- **Float-to-int safety** — speed/frame calculations clamped to non-negative before u64 cast
+- **Keyframe div-by-zero** — returns left.value when two keyframes share the same frame
+- **ImageBuffer validation** — frame data length checked before `from_raw()` in MCP extract_frame
+- **WASM memory bounds** — plugin params checked against 16MB limit before write, `buf_size * 2` overflow guard
+- **Autosave stop signal** — `tx.send()` failure now logged instead of silently dropped
+
+### P0 Code Audit & Refactoring (14 items)
+
+#### Round 1: Structural Audit
+- **DSP hardening** — NaN/Inf guards on all 4 modules (compressor, EQ, noise reduction, reverb), threshold clamping [-120, 120] dB, biquad coefficient validation (a0 near-zero skip), minimum reverb delay length 4 samples, 8 new edge-case tests
+- **GPU render audit** — All 8 compute shaders verified correct (trilinear LUT, alpha-over blending, color transforms). Keyframe resolution O(P×K) cost documented
+- **Command.rs audit** — All 16 EditCommand variants confirmed symmetric apply/undo. Added 10 redo tests + 1 complex integration test (34 total, up from 23)
+- **Autosave race fix** — Dirty flag now reset atomically with project snapshot (prevents lost updates). Autosave writes to `.tmp` then renames (atomic). Corrupt JSON recovery now logs parse error details
+- **Export pipeline** — GIF format fixed (was x264enc+mp4mux, now gifenc). Added `ExportEncoder` enum (Auto/Software/Vaapi/Nvenc/Tarang) with `available_encoders()` system probe. Hardware encoder failures now logged with details
+- **WASM plugin sandboxing** — Epoch interruption enabled (5-second timeout kills runaway plugins). Memory capped at 16MB fixed (cannot grow). Wasmtime traps caught and returned as descriptive errors
+- **TS/Rust type parity** — Added `PlaybackPosition`, `WaveformData`, `ThumbnailSpec`, `ExportEncoder` to TypeScript types. Fixed `MultiCamGroup` signed offset documentation
+
+#### Round 2: Refactoring
+- **GPU render.rs split** — 1252-line monolith split into `render/{mod,effects,transitions,dispatch,collect}.rs`. `resolve_param` extracted as module-level function replacing per-clip closure
+- **Serde defaults verified** — All `#[serde(default)]` fields (keyframe_tracks, proxy_path, volume, pan, multicam_groups) confirmed backward-compatible
+- **Proxy input validation** — Early rejection for audio-only (wav/mp3/flac/ogg/m4a/aac) and image (png/jpg/gif/bmp/tiff/svg) files with clear error
+- **cosmic-text caching** — `FontSystem` cached via `LazyLock<Mutex<>>` (was creating new instance per frame render)
+
 ### Version Sync
 - All version references bumped to `2026.3.19` (VERSION, Cargo.toml, tauri.conf.json, package.json, marketplace recipe, agent manifest)
 - Marketplace recipe and agent manifest synced (were stale at `2026.3.15`)

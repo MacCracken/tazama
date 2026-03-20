@@ -68,7 +68,13 @@ fn low_shelf(sample_rate: u32, freq: f64, gain_db: f64) -> BiquadCoeffs {
 
     let a0 = (a + 1.0) + (a - 1.0) * cos_w0 + two_sqrt_a_alpha;
     if a0.abs() < 1e-10 {
-        return BiquadCoeffs { b0: 1.0, b1: 0.0, b2: 0.0, a1: 0.0, a2: 0.0 };
+        return BiquadCoeffs {
+            b0: 1.0,
+            b1: 0.0,
+            b2: 0.0,
+            a1: 0.0,
+            a2: 0.0,
+        };
     }
     BiquadCoeffs {
         b0: (a * ((a + 1.0) - (a - 1.0) * cos_w0 + two_sqrt_a_alpha)) / a0,
@@ -89,7 +95,13 @@ fn peaking_eq(sample_rate: u32, freq: f64, gain_db: f64, q: f64) -> BiquadCoeffs
 
     let a0 = 1.0 + alpha / a;
     if a0.abs() < 1e-10 {
-        return BiquadCoeffs { b0: 1.0, b1: 0.0, b2: 0.0, a1: 0.0, a2: 0.0 };
+        return BiquadCoeffs {
+            b0: 1.0,
+            b1: 0.0,
+            b2: 0.0,
+            a1: 0.0,
+            a2: 0.0,
+        };
     }
     BiquadCoeffs {
         b0: (1.0 + alpha * a) / a0,
@@ -111,7 +123,13 @@ fn high_shelf(sample_rate: u32, freq: f64, gain_db: f64) -> BiquadCoeffs {
 
     let a0 = (a + 1.0) - (a - 1.0) * cos_w0 + two_sqrt_a_alpha;
     if a0.abs() < 1e-10 {
-        return BiquadCoeffs { b0: 1.0, b1: 0.0, b2: 0.0, a1: 0.0, a2: 0.0 };
+        return BiquadCoeffs {
+            b0: 1.0,
+            b1: 0.0,
+            b2: 0.0,
+            a1: 0.0,
+            a2: 0.0,
+        };
     }
     BiquadCoeffs {
         b0: (a * ((a + 1.0) + (a - 1.0) * cos_w0 + two_sqrt_a_alpha)) / a0,
@@ -177,7 +195,8 @@ pub fn apply_eq(
             if high_valid {
                 s = high_states[c].process(&high_coeffs, s);
             }
-            *sample = s as f32;
+            let out = s as f32;
+            *sample = if out.is_finite() { out } else { 0.0 };
         }
     }
 }

@@ -5,6 +5,8 @@ use crate::context::GpuError;
 
 use super::Renderer;
 
+const COMPUTE_WORKGROUP_SIZE: u32 = 256;
+
 impl Renderer {
     /// Dispatch a compute shader with 2 storage buffer bindings.
     pub(crate) fn dispatch_2buffer(
@@ -158,7 +160,7 @@ impl Renderer {
                 push_constants,
             );
 
-            let group_count = pixel_count.div_ceil(256);
+            let group_count = pixel_count.div_ceil(COMPUTE_WORKGROUP_SIZE);
             device.cmd_dispatch(self.command_buffer, group_count, 1, 1);
 
             // Memory barrier for compute → compute/transfer

@@ -147,11 +147,17 @@ fn process_channel(data: &mut [f32], strength: f32) {
     for i in 0..len {
         if win_sum[i] > 1e-10 {
             let reconstructed = output[i] / win_sum[i];
-            // Noise reduction should never increase amplitude — clamp to original magnitude
-            let orig_abs = data[i].abs();
-            data[i] = reconstructed.clamp(-orig_abs, orig_abs);
+            if !reconstructed.is_finite() || !data[i].is_finite() {
+                data[i] = 0.0;
+            } else {
+                // Noise reduction should never increase amplitude — clamp to original magnitude
+                let orig_abs = data[i].abs();
+                data[i] = reconstructed.clamp(-orig_abs, orig_abs);
+            }
+        } else if !data[i].is_finite() {
+            data[i] = 0.0;
         }
-        // Samples not covered by any window keep their original value.
+        // Samples not covered by any window keep their original value (if finite).
     }
 }
 

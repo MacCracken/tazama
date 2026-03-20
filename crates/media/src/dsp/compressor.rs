@@ -70,6 +70,9 @@ pub fn apply_compressor(
 
         for sample in frame.iter_mut() {
             *sample *= gain;
+            if !sample.is_finite() {
+                *sample = 0.0;
+            }
         }
     }
 }

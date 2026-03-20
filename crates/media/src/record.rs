@@ -163,10 +163,18 @@ fn write_wav(
     let num_samples = samples.len();
     let bytes_per_sample: u16 = 2; // 16-bit PCM
     let bits_per_sample: u16 = 16;
-    let byte_rate = sample_rate * channels as u32 * bytes_per_sample as u32;
+    let byte_rate = sample_rate
+        .checked_mul(channels as u32)
+        .and_then(|v| v.checked_mul(bytes_per_sample as u32))
+        .ok_or_else(|| MediaPipelineError::Export("WAV header arithmetic overflow".into()))?;
     let block_align = channels * bytes_per_sample;
-    let data_size = (num_samples * bytes_per_sample as usize) as u32;
-    let file_size = 36 + data_size;
+    let data_size = num_samples
+        .checked_mul(bytes_per_sample as usize)
+        .and_then(|v| u32::try_from(v).ok())
+        .ok_or_else(|| MediaPipelineError::Export("WAV data size overflow".into()))?;
+    let file_size = 36u32
+        .checked_add(data_size)
+        .ok_or_else(|| MediaPipelineError::Export("WAV file size overflow".into()))?;
 
     let mut file = std::fs::File::create(path)?;
 

@@ -4,8 +4,7 @@ use cosmic_text::{Attrs, Buffer, Color, FontSystem, Metrics, Shaping, SwashCache
 
 /// Global font system — `FontSystem::new()` is expensive (enumerates all system fonts),
 /// so we create it once and reuse it across calls.
-static FONT_SYSTEM: LazyLock<Mutex<FontSystem>> =
-    LazyLock::new(|| Mutex::new(FontSystem::new()));
+static FONT_SYSTEM: LazyLock<Mutex<FontSystem>> = LazyLock::new(|| Mutex::new(FontSystem::new()));
 
 /// Rasterize text to an RGBA pixel buffer.
 ///
