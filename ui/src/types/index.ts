@@ -54,7 +54,7 @@ export interface KeyframeTrack {
 export interface MultiCamGroup {
   id: string;
   name: string;
-  angles: [string, number][]; // [TrackId, sync_offset_frames]
+  angles: [string, number][]; // [TrackId, sync_offset_frames] — number can be negative for sync offset
 }
 
 // Timeline types
@@ -135,6 +135,12 @@ export type TransitionKind = "Cut" | "Dissolve" | "Wipe" | "Fade";
 // Playback types
 export type PlaybackState = "Stopped" | "Playing" | "Paused";
 
+export interface PlaybackPosition {
+  frame: number;
+  state: PlaybackState;
+  loop_region: [number, number] | null;
+}
+
 // Media info types
 export type Codec = "H264" | "H265" | "Vp9" | "Av1" | "Aac" | "Opus" | "Flac" | "Mp3" | "Other";
 
@@ -165,8 +171,25 @@ export interface MediaInfo {
   file_size: number;
 }
 
+// Waveform types
+export interface WaveformData {
+  sample_rate: number;
+  channels: number;
+  peaks_per_second: number;
+  peaks: [number, number][][];
+}
+
+// Thumbnail types
+export interface ThumbnailSpec {
+  width: number;
+  height: number;
+  interval_ms: number;
+}
+
 // Export types
 export type ExportFormat = "Mp4" | "WebM" | "ProRes" | "DnxHr" | "Mkv" | "Gif";
+
+export type ExportEncoder = 'Auto' | 'Software' | 'Vaapi' | 'Nvenc' | 'Tarang';
 
 export interface ExportConfig {
   output_path: string;

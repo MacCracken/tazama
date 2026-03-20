@@ -1,4 +1,11 @@
+use std::sync::{LazyLock, Mutex};
+
 use cosmic_text::{Attrs, Buffer, Color, FontSystem, Metrics, Shaping, SwashCache};
+
+/// Global font system — `FontSystem::new()` is expensive (enumerates all system fonts),
+/// so we create it once and reuse it across calls.
+static FONT_SYSTEM: LazyLock<Mutex<FontSystem>> =
+    LazyLock::new(|| Mutex::new(FontSystem::new()));
 
 /// Rasterize text to an RGBA pixel buffer.
 ///
@@ -12,8 +19,8 @@ pub fn rasterize_text(
     max_width: u32,
     max_height: u32,
 ) -> (Vec<u8>, u32, u32) {
-    let mut font_system = FontSystem::new();
-    let mut swash_cache = SwashCache::new();
+    let mut font_system = FONT_SYSTEM.lock().unwrap_or_else(|e| e.into_inner());
+    let mut swash_cache = SwashCache::new(); // SwashCache is cheap, FontSystem is expensive
 
     let metrics = Metrics::new(font_size, font_size * 1.2);
     let mut buffer = Buffer::new(&mut font_system, metrics);

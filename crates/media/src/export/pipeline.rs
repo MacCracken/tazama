@@ -4,7 +4,7 @@ use tokio::sync::{mpsc, watch};
 use tokio::task;
 use tracing::{debug, error, info};
 
-use super::{ExportConfig, ExportFormat, ExportProgress};
+use super::{ExportConfig, ExportEncoder, ExportFormat, ExportProgress};
 use crate::decode::{AudioBuffer, VideoFrame};
 use crate::error::MediaPipelineError;
 

@@ -57,23 +57,20 @@ impl AutosaveManager {
                     }
                 }
 
-                let is_dirty = {
+                // Atomically check dirty flag and snapshot project+path
+                // while still holding the dirty lock to prevent lost updates.
+                let snapshot = {
                     let mut d = dirty.lock().await;
                     if !*d {
                         continue;
                     }
+                    let proj = project.lock().await.clone();
+                    let save_path = path.lock().await.clone();
                     *d = false;
-                    true
+                    (proj, save_path)
                 };
 
-                if !is_dirty {
-                    continue;
-                }
-
-                let proj = project.lock().await.clone();
-                let save_path = path.lock().await.clone();
-
-                if let (Some(proj), Some(p)) = (proj, save_path) {
+                if let (Some(proj), Some(p)) = snapshot {
                     let autosave_path = autosave_path_for(&p);
                     match save_autosave(&proj, &autosave_path).await {
                         Ok(()) => debug!("autosaved to {}", autosave_path.display()),
@@ -131,7 +128,9 @@ fn autosave_path_for(path: &Path) -> PathBuf {
 async fn save_autosave(project: &Project, path: &Path) -> Result<(), std::io::Error> {
     let json = serde_json::to_string(project)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
-    tokio::fs::write(path, json).await
+    let tmp_path = path.with_extension("autosave.tmp");
+    tokio::fs::write(&tmp_path, json).await?;
+    tokio::fs::rename(&tmp_path, path).await
 }
 
 /// Check if a newer autosave file exists for the given project path.
@@ -164,7 +163,16 @@ pub async fn recover(path: &Path) -> Option<Project> {
     }
 
     let data = tokio::fs::read_to_string(&autosave).await.ok()?;
-    let project: Project = serde_json::from_str(&data).ok()?;
+    let project: Project = match serde_json::from_str(&data) {
+        Ok(p) => p,
+        Err(e) => {
+            warn!(
+                "autosave file is corrupted ({}), skipping recovery: {e}",
+                autosave.display()
+            );
+            return None;
+        }
+    };
     info!("recovered project from autosave: {}", autosave.display());
     Some(project)
 }

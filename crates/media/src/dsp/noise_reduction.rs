@@ -119,7 +119,8 @@ fn process_channel(data: &mut [f32], strength: f32) {
         let scale = 1.0 / WINDOW_SIZE as f32;
         for i in 0..WINDOW_SIZE {
             if pos + i < len {
-                output[pos + i] += buffer[i].re * scale * window[i];
+                let val = buffer[i].re * scale * window[i];
+                output[pos + i] += if val.is_finite() { val } else { 0.0 };
             }
         }
 
@@ -315,6 +316,15 @@ mod tests {
                 s.abs() < 1e-10,
                 "short input below threshold should be zeroed"
             );
+        }
+    }
+
+    #[test]
+    fn nan_input_produces_finite_output() {
+        let mut samples = vec![f32::NAN; 4096];
+        apply_noise_reduction(&mut samples, 1, 0.5);
+        for s in &samples {
+            assert!(s.is_finite(), "NaN input should not propagate");
         }
     }
 

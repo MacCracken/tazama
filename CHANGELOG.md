@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026.3.19
+
+### Dependency Migration
+- **Tarang** migrated from local path dependencies (5 sub-crates) to single published crate `tarang = "0.19.3"` on crates.io
+  - `tarang-core`, `tarang-audio`, `tarang-demux`, `tarang-video`, `tarang-ai` → single `tarang` crate with module imports (`tarang::core::`, `tarang::audio::`, etc.)
+  - Feature flag simplified: `tarang = ["dep:tarang", "dep:symphonia"]`
+  - Tarang switched from CalVer to SemVer for crates.io compatibility
+- **ai-hwaccel** `0.19.3` added as non-optional workspace dependency
+  - Universal AI hardware accelerator detection (CUDA, ROCm, Metal, Vulkan, Intel NPU, AMD XDNA, TPU, Gaudi, AWS Neuron, oneAPI, Qualcomm)
+  - Added to both `tazama-media` and `tazama-gpu` — always-on, OS-agnostic, best-effort detection
+  - Zero vendor SDK compile-time dependencies
+
+### Version Sync
+- All version references bumped to `2026.3.19` (VERSION, Cargo.toml, tauri.conf.json, package.json, marketplace recipe, agent manifest)
+- Marketplace recipe and agent manifest synced (were stale at `2026.3.15`)
+
 ## 2026.3.18-2
 
 ### Export Audio Codec Selection

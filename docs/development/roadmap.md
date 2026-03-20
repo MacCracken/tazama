@@ -51,6 +51,7 @@ Tauri v2 + React 19 / TypeScript / Vite / Tailwind v4 / Zustand frontend.
 ## Post-v1 Completed
 
 - **Non-AI Features** — Keyframe animation engine, audio DSP (EQ/compressor/noise reduction/reverb), mixer with per-track volume/pan, voiceover recording, LUT import, text overlay, PiP transform, speed ramping, proxy workflow, multi-cam editing, project autosave, WASM plugin system, tarang export migration, format expansion (ProRes/DNxHR/MKV/GIF), hardware encode detection (VAAPI/NVENC fallback) (2026.3.18)
+- **Dependency Migration** — Tarang to crates.io (single crate v0.19.3), ai-hwaccel added as non-optional dep (2026.3.19)
 
 ---
 
@@ -80,27 +81,11 @@ High priority. The post-v1 feature push added significant surface area across al
 
 ## Post-v1 Features
 
-### Tarang Media Backend Migration
-- Replace GStreamer/ffmpeg dependency with **tarang** (`/home/macro/Repos/tarang`) for decode pipeline
-- `tarang-demux` for container parsing (MP4, MKV, WebM)
-- `tarang-audio` for audio decode (pure Rust via symphonia — already used by Shruti's sampler)
-- `tarang-video` for video decode (dav1d/openh264/libvpx via thin Rust FFI)
-- `tarang-ai` for scene detection, content classification, transcription routing
-- **Benefit**: Drops massive ffmpeg dep, memory-safe pipeline, shared codebase with Shruti and AGNOS media player
-- **Effort**: Medium — replace GStreamer probe/decode calls with tarang equivalents
-
-### Audio Editing
-- Audio mixer panel (per-track volume, pan, mute/solo)
-- Audio effects (EQ, compressor, noise reduction, reverb)
-- Waveform editing (visual trim, fade handles on audio clips)
-- Voiceover recording (record via PipeWire directly into timeline)
-
-### Advanced Effects
-- Keyframe animation (animate any effect parameter over time, bezier curves)
-- Speed ramping (variable speed with smooth transitions)
-- LUT import (load .cube LUT files for color grading)
-- Text / title editor (overlay text with fonts, animation, positioning)
-- Picture-in-picture (resize and position clips within the frame)
+### Tarang Media Backend Migration (in progress)
+- Tarang integrated behind `tarang` feature flag for probe, decode, thumbnails, and export fallback (2026.3.18)
+- Migrated from local path deps to published crate `tarang = "0.19.3"` (2026.3.19)
+- Remaining: replace GStreamer as primary pipeline (tarang currently used as first-try with GStreamer fallback)
+- Remaining: full tarang video export (currently stub, falls back to GStreamer)
 
 ### AI Features (Tier 1)
 - Scene detection (auto-detect scene boundaries, suggest cuts)
@@ -117,10 +102,4 @@ High priority. The post-v1 feature push added significant surface area across al
 - Audio cleanup (AI noise removal, voice isolation)
 
 ### Platform
-- Plugin system (third-party effects/transitions as WASM or shared libs)
-- Proxy workflow (low-res proxies for editing, swap on export)
-- Multi-cam editing (sync and switch between multiple camera angles)
-- Project autosave (periodic save with crash recovery)
-- Hardware encode (VAAPI / NVENC for GPU-accelerated export)
-- Format expansion (ProRes, DNxHR, MKV, GIF export)
 - Windows release builds (MSVC toolchain, Vulkan on Windows, GStreamer MSVC binaries, Tauri Windows target, MSI/NSIS installer, CI cross-compilation)

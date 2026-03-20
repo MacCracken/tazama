@@ -46,6 +46,17 @@ struct BiquadCoeffs {
     a2: f64,
 }
 
+impl BiquadCoeffs {
+    /// Returns true if all coefficients are finite (not NaN or Inf).
+    fn is_valid(&self) -> bool {
+        self.b0.is_finite()
+            && self.b1.is_finite()
+            && self.b2.is_finite()
+            && self.a1.is_finite()
+            && self.a2.is_finite()
+    }
+}
+
 /// Compute low-shelf biquad coefficients (Bristow-Johnson cookbook).
 fn low_shelf(sample_rate: u32, freq: f64, gain_db: f64) -> BiquadCoeffs {
     let a = 10.0_f64.powf(gain_db / 40.0);
@@ -56,6 +67,9 @@ fn low_shelf(sample_rate: u32, freq: f64, gain_db: f64) -> BiquadCoeffs {
     let two_sqrt_a_alpha = 2.0 * a.sqrt() * alpha;
 
     let a0 = (a + 1.0) + (a - 1.0) * cos_w0 + two_sqrt_a_alpha;
+    if a0.abs() < 1e-10 {
+        return BiquadCoeffs { b0: 1.0, b1: 0.0, b2: 0.0, a1: 0.0, a2: 0.0 };
+    }
     BiquadCoeffs {
         b0: (a * ((a + 1.0) - (a - 1.0) * cos_w0 + two_sqrt_a_alpha)) / a0,
         b1: (2.0 * a * ((a - 1.0) - (a + 1.0) * cos_w0)) / a0,
@@ -74,6 +88,9 @@ fn peaking_eq(sample_rate: u32, freq: f64, gain_db: f64, q: f64) -> BiquadCoeffs
     let alpha = sin_w0 / (2.0 * q);
 
     let a0 = 1.0 + alpha / a;
+    if a0.abs() < 1e-10 {
+        return BiquadCoeffs { b0: 1.0, b1: 0.0, b2: 0.0, a1: 0.0, a2: 0.0 };
+    }
     BiquadCoeffs {
         b0: (1.0 + alpha * a) / a0,
         b1: (-2.0 * cos_w0) / a0,
@@ -93,6 +110,9 @@ fn high_shelf(sample_rate: u32, freq: f64, gain_db: f64) -> BiquadCoeffs {
     let two_sqrt_a_alpha = 2.0 * a.sqrt() * alpha;
 
     let a0 = (a + 1.0) - (a - 1.0) * cos_w0 + two_sqrt_a_alpha;
+    if a0.abs() < 1e-10 {
+        return BiquadCoeffs { b0: 1.0, b1: 0.0, b2: 0.0, a1: 0.0, a2: 0.0 };
+    }
     BiquadCoeffs {
         b0: (a * ((a + 1.0) + (a - 1.0) * cos_w0 + two_sqrt_a_alpha)) / a0,
         b1: (-2.0 * a * ((a - 1.0) + (a + 1.0) * cos_w0)) / a0,
@@ -131,6 +151,15 @@ pub fn apply_eq(
     let mid_coeffs = peaking_eq(sample_rate, 1000.0, mid_gain_db as f64, 1.0);
     let high_coeffs = high_shelf(sample_rate, 5000.0, high_gain_db as f64);
 
+    // Skip bands with invalid (NaN/Inf) coefficients
+    let low_valid = low_gain_db.abs() > 1e-6 && low_coeffs.is_valid();
+    let mid_valid = mid_gain_db.abs() > 1e-6 && mid_coeffs.is_valid();
+    let high_valid = high_gain_db.abs() > 1e-6 && high_coeffs.is_valid();
+
+    if !low_valid && !mid_valid && !high_valid {
+        return;
+    }
+
     // Per-channel filter states for each band
     let mut low_states: Vec<BiquadState> = (0..ch).map(|_| BiquadState::new()).collect();
     let mut mid_states: Vec<BiquadState> = (0..ch).map(|_| BiquadState::new()).collect();
@@ -139,13 +168,13 @@ pub fn apply_eq(
     for frame in samples.chunks_mut(ch) {
         for (c, sample) in frame.iter_mut().enumerate() {
             let mut s = *sample as f64;
-            if low_gain_db.abs() > 1e-6 {
+            if low_valid {
                 s = low_states[c].process(&low_coeffs, s);
             }
-            if mid_gain_db.abs() > 1e-6 {
+            if mid_valid {
                 s = mid_states[c].process(&mid_coeffs, s);
             }
-            if high_gain_db.abs() > 1e-6 {
+            if high_valid {
                 s = high_states[c].process(&high_coeffs, s);
             }
             *sample = s as f32;
@@ -356,6 +385,24 @@ mod tests {
         apply_eq(&mut samples, 48000, 1, 6.0, 3.0, -3.0);
         // Just verify no panic and output is finite
         assert!(samples[0].is_finite());
+    }
+
+    #[test]
+    fn nan_input_produces_finite_output() {
+        let mut samples = vec![f32::NAN; 1024];
+        apply_eq(&mut samples, 48000, 1, 6.0, 3.0, -3.0);
+        for s in &samples {
+            assert!(s.is_finite(), "NaN input should not propagate through EQ");
+        }
+    }
+
+    #[test]
+    fn nan_gain_skips_band() {
+        let original: Vec<f32> = (0..1024).map(|i| (i as f32 * 0.01).sin()).collect();
+        let mut processed = original.clone();
+        apply_eq(&mut processed, 48000, 1, f32::NAN, 0.0, 0.0);
+        // NaN gain produces NaN coefficients which are invalid, so band is skipped
+        assert_eq!(original, processed, "NaN gain should skip the band");
     }
 
     #[test]

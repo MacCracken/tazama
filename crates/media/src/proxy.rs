@@ -56,6 +56,24 @@ fn generate_proxy_sync(
 ) -> Result<(), MediaPipelineError> {
     use gstreamer::prelude::*;
 
+    // Reject non-video inputs that would cause the GStreamer pipeline to silently fail
+    if let Some(ext) = Path::new(source).extension().and_then(|e| e.to_str()) {
+        let ext_lower = ext.to_ascii_lowercase();
+        match ext_lower.as_str() {
+            "wav" | "mp3" | "flac" | "ogg" | "m4a" | "aac" => {
+                return Err(MediaPipelineError::UnsupportedFormat(
+                    "proxy generation not supported for audio-only files".into(),
+                ));
+            }
+            "png" | "jpg" | "jpeg" | "gif" | "bmp" | "tiff" | "svg" => {
+                return Err(MediaPipelineError::UnsupportedFormat(
+                    "proxy generation not supported for image files".into(),
+                ));
+            }
+            _ => {}
+        }
+    }
+
     let pipeline = gstreamer::Pipeline::new();
 
     let filesrc = gstreamer::ElementFactory::make("filesrc")

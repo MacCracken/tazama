@@ -5,6 +5,7 @@ pub mod tarang_pipeline;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tokio::sync::{mpsc, watch};
+use tracing::{info, warn};
 
 use crate::decode::{AudioBuffer, VideoFrame};
 use crate::error::MediaPipelineError;
@@ -27,6 +28,27 @@ pub enum ExportAudioCodec {
     Flac,
 }
 
+/// Encoder selection for export.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ExportEncoder {
+    /// Current behavior: try hw, fall back to sw
+    Auto,
+    /// Force software encoding
+    Software,
+    /// Force VAAPI hardware encoding
+    Vaapi,
+    /// Force NVENC hardware encoding
+    Nvenc,
+    /// Use tarang encoder when available
+    Tarang,
+}
+
+impl Default for ExportEncoder {
+    fn default() -> Self {
+        Self::Auto
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExportConfig {
     pub output_path: PathBuf,
@@ -40,6 +62,43 @@ pub struct ExportConfig {
     pub audio_codec: Option<ExportAudioCodec>,
     #[serde(default)]
     pub hardware_accel: bool,
+    #[serde(default)]
+    pub encoder: ExportEncoder,
+}
+
+/// Probe which encoder backends are available on this system.
+///
+/// Checks for GStreamer element factories; returns a list of `ExportEncoder`
+/// variants that can be used.  `Software` is always included since x264enc is
+/// a build-time dependency.
+pub fn available_encoders() -> Vec<ExportEncoder> {
+    let _ = gstreamer::init();
+    let mut encoders = vec![ExportEncoder::Software];
+
+    if gstreamer::ElementFactory::find("vaapih264enc").is_some() {
+        info!("VAAPI encoder available");
+        encoders.push(ExportEncoder::Vaapi);
+    } else {
+        info!("VAAPI encoder not found");
+    }
+
+    if gstreamer::ElementFactory::find("nvh264enc").is_some() {
+        info!("NVENC encoder available");
+        encoders.push(ExportEncoder::Nvenc);
+    } else {
+        info!("NVENC encoder not found");
+    }
+
+    #[cfg(feature = "tarang")]
+    {
+        encoders.push(ExportEncoder::Tarang);
+        info!("Tarang encoder available (feature enabled)");
+    }
+
+    // Auto is always valid since it falls back to software
+    encoders.push(ExportEncoder::Auto);
+
+    encoders
 }
 
 /// Creates an export pipeline, using the best available backend.
@@ -163,6 +222,7 @@ mod tests {
             channels: 2,
             audio_codec: None,
             hardware_accel: true,
+            encoder: ExportEncoder::default(),
         };
         let json = serde_json::to_string(&config).unwrap();
         let back: ExportConfig = serde_json::from_str(&json).unwrap();
@@ -204,6 +264,7 @@ mod tests {
                 channels: 2,
                 audio_codec: None,
                 hardware_accel: false,
+                encoder: ExportEncoder::default(),
             };
             let json = serde_json::to_string(&config).unwrap();
             let back: ExportConfig = serde_json::from_str(&json).unwrap();
