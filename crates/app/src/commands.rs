@@ -311,6 +311,17 @@ pub async fn measure_loudness(path: String) -> Result<f64, String> {
 }
 
 #[tauri::command]
+pub async fn extract_waveform(
+    path: String,
+    peaks_per_second: u32,
+) -> Result<tazama_core::WaveformData, String> {
+    tazama_media::init().map_err(|e| e.to_string())?;
+    tazama_media::waveform::extract_waveform(std::path::Path::new(&path), peaks_per_second)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn generate_thumbnails(
     path: String,
     spec: tazama_core::ThumbnailSpec,

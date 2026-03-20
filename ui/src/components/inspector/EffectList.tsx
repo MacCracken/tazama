@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import type { Clip, Effect, EffectKind } from "../../types";
 import { useProjectStore } from "../../stores/projectStore";
 import { EffectEditor } from "./EffectEditor";
+import { KeyframeEditor } from "./KeyframeEditor";
 
 const EFFECT_PRESETS: { label: string; kind: EffectKind }[] = [
   { label: "Color Grade", kind: { ColorGrade: { brightness: 0, contrast: 1, saturation: 1, temperature: 0 } } },
@@ -102,6 +103,7 @@ export function EffectList({ clip, trackId }: EffectListProps) {
             </button>
           </div>
           <EffectEditor effect={effect} trackId={trackId} clipId={clip.id} />
+          <KeyframeEditor effect={effect} trackId={trackId} clipId={clip.id} />
         </div>
       ))}
     </div>
