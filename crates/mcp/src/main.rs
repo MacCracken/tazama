@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use serde_json::{Value, json};
 use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 use uuid::Uuid;
 
 use tazama_core::{
@@ -88,10 +89,37 @@ fn mcp_error(id: &Value, msg: impl Into<String>) -> Value {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter("tazama_mcp=debug")
-        .with_writer(std::io::stderr)
-        .init();
+    let env_filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("tazama_mcp=info,tazama_media=info,tazama_core=info"));
+
+    let use_json = std::env::var("TAZAMA_LOG_JSON").is_ok();
+
+    if use_json {
+        let fmt_layer = fmt::layer()
+            .json()
+            .with_target(true)
+            .with_thread_ids(true)
+            .with_file(true)
+            .with_line_number(true)
+            .with_writer(std::io::stderr);
+
+        tracing_subscriber::registry()
+            .with(env_filter)
+            .with(fmt_layer)
+            .init();
+    } else {
+        let fmt_layer = fmt::layer()
+            .with_target(true)
+            .with_thread_ids(true)
+            .with_file(true)
+            .with_line_number(true)
+            .with_writer(std::io::stderr);
+
+        tracing_subscriber::registry()
+            .with(env_filter)
+            .with(fmt_layer)
+            .init();
+    }
 
     tracing::info!("tazama-mcp server starting (stdio)");
 

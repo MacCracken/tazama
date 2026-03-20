@@ -57,6 +57,14 @@ impl Renderer {
         frame_source: &dyn FrameSource,
         settings: &ProjectSettings,
     ) -> Result<GpuFrame, GpuError> {
+        let _span = tracing::debug_span!(
+            "render_frame",
+            frame = frame_index,
+            width = settings.width,
+            height = settings.height
+        )
+        .entered();
+
         let width = settings.width;
         let height = settings.height;
         let frame_size = GpuBuffer::frame_buffer_size(width, height);

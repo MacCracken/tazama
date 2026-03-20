@@ -22,6 +22,8 @@ pub async fn probe(path: &Path) -> Result<MediaInfo, MediaPipelineError> {
 }
 
 fn probe_sync(path: &Path) -> Result<MediaInfo, MediaPipelineError> {
+    let _span = tracing::debug_span!("probe", path = %path.display()).entered();
+
     if !path.exists() {
         return Err(MediaPipelineError::FileNotFound(path.display().to_string()));
     }

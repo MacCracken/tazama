@@ -2,7 +2,7 @@ use gstreamer::prelude::*;
 use gstreamer_app::AppSrc;
 use tokio::sync::{mpsc, watch};
 use tokio::task;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, info_span};
 
 use super::{ExportConfig, ExportEncoder, ExportFormat, ExportProgress};
 use crate::decode::{AudioBuffer, VideoFrame};
@@ -67,6 +67,10 @@ fn run_export(
     progress_tx: &watch::Sender<ExportProgress>,
     total_frames: u64,
 ) -> Result<(), MediaPipelineError> {
+    let _span = info_span!("export_pipeline", format = ?config.format,
+        width = config.width, height = config.height)
+    .entered();
+
     let pipeline = gstreamer::Pipeline::new();
 
     // Video branch

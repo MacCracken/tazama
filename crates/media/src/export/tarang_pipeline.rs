@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use tokio::sync::watch;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, info_span, warn};
 
 use super::{ExportAudioCodec, ExportConfig, ExportFormat, ExportProgress};
 use crate::decode::{AudioBuffer, VideoFrame};
@@ -430,6 +430,10 @@ fn run_tarang_export(
     progress_tx: &watch::Sender<ExportProgress>,
     total_frames: u64,
 ) -> Result<(), MediaPipelineError> {
+    let _span = info_span!("tarang_export_pipeline", format = ?config.format,
+        width = config.width, height = config.height)
+    .entered();
+
     // Create output file
     let file = std::fs::File::create(&config.output_path)?;
     let mut writer = std::io::BufWriter::new(file);

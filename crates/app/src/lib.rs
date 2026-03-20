@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use tauri::Manager;
 use tokio::sync::Mutex;
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 pub fn run() {
     tauri::Builder::default()
@@ -15,11 +16,50 @@ pub fn run() {
             30,
         ))))
         .setup(|app| {
-            let _main_window = app.get_webview_window("main").unwrap();
-            tracing_subscriber::fmt()
-                .with_env_filter("tazama=debug")
-                .init();
-            tracing::info!("Tazama starting");
+            let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                EnvFilter::new("tazama=info,tazama_media=info,tazama_gpu=info,tazama_core=info")
+            });
+
+            let use_json = std::env::var("TAZAMA_LOG_JSON").is_ok();
+
+            if use_json {
+                let fmt_layer = fmt::layer()
+                    .json()
+                    .with_target(true)
+                    .with_thread_ids(true)
+                    .with_file(true)
+                    .with_line_number(true);
+
+                tracing_subscriber::registry()
+                    .with(env_filter)
+                    .with(fmt_layer)
+                    .init();
+            } else {
+                let fmt_layer = fmt::layer()
+                    .with_target(true)
+                    .with_thread_ids(true)
+                    .with_file(true)
+                    .with_line_number(true);
+
+                tracing_subscriber::registry()
+                    .with(env_filter)
+                    .with(fmt_layer)
+                    .init();
+            }
+
+            // File logging via shell redirect:
+            //   RUST_LOG=debug tazama 2> tazama.log
+            // JSON structured output:
+            //   RUST_LOG=debug TAZAMA_LOG_JSON=1 tazama
+
+            tracing::info!("Tazama starting (version {})", env!("CARGO_PKG_VERSION"));
+
+            #[cfg(debug_assertions)]
+            {
+                let _window = app.get_webview_window("main").unwrap();
+                _window.open_devtools();
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
