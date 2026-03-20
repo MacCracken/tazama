@@ -50,6 +50,10 @@ pub fn hardware_summary() -> Vec<HardwareInfo> {
             family: format!("{}", p.accelerator.family()),
             memory_bytes: p.memory_bytes,
             available: p.available,
+            memory_used_bytes: p.memory_used_bytes,
+            memory_free_bytes: p.memory_free_bytes,
+            temperature_c: p.temperature_c,
+            gpu_utilization_percent: p.gpu_utilization_percent,
         })
         .collect()
 }
@@ -61,6 +65,10 @@ pub struct HardwareInfo {
     pub family: String,
     pub memory_bytes: u64,
     pub available: bool,
+    pub memory_used_bytes: Option<u64>,
+    pub memory_free_bytes: Option<u64>,
+    pub temperature_c: Option<u32>,
+    pub gpu_utilization_percent: Option<u32>,
 }
 
 #[cfg(test)]
@@ -98,6 +106,10 @@ mod tests {
             family: "cuda".to_string(),
             memory_bytes: 8_000_000_000,
             available: true,
+            memory_used_bytes: Some(2_000_000_000),
+            memory_free_bytes: Some(6_000_000_000),
+            temperature_c: Some(65),
+            gpu_utilization_percent: Some(42),
         };
         let json = serde_json::to_string(&info).unwrap();
         let back: HardwareInfo = serde_json::from_str(&json).unwrap();
@@ -105,5 +117,28 @@ mod tests {
         assert_eq!(back.family, "cuda");
         assert_eq!(back.memory_bytes, 8_000_000_000);
         assert!(back.available);
+        assert_eq!(back.memory_used_bytes, Some(2_000_000_000));
+        assert_eq!(back.memory_free_bytes, Some(6_000_000_000));
+        assert_eq!(back.temperature_c, Some(65));
+        assert_eq!(back.gpu_utilization_percent, Some(42));
+    }
+
+    #[test]
+    fn hardware_info_serde_with_none_fields() {
+        let info = HardwareInfo {
+            name: "CpuOnly".to_string(),
+            family: "cpu".to_string(),
+            memory_bytes: 16_000_000_000,
+            available: true,
+            memory_used_bytes: None,
+            memory_free_bytes: None,
+            temperature_c: None,
+            gpu_utilization_percent: None,
+        };
+        let json = serde_json::to_string(&info).unwrap();
+        let back: HardwareInfo = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.name, "CpuOnly");
+        assert!(back.memory_used_bytes.is_none());
+        assert!(back.temperature_c.is_none());
     }
 }

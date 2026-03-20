@@ -180,10 +180,13 @@ export interface WaveformData {
 }
 
 // Thumbnail types
+export type ThumbnailStrategy = "SceneBased" | "ContentBased";
+
 export interface ThumbnailSpec {
   width: number;
   height: number;
   interval_ms: number;
+  strategy?: ThumbnailStrategy;
 }
 
 // Export types
@@ -235,6 +238,10 @@ export interface HardwareInfo {
   family: string;
   memory_bytes: number;
   available: boolean;
+  memory_used_bytes?: number;
+  memory_free_bytes?: number;
+  temperature_c?: number;
+  gpu_utilization_percent?: number;
 }
 
 // UI-specific types

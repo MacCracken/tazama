@@ -65,7 +65,7 @@ bytemuck = { version = "1", features = ["derive"] }
 cpal = "0.15"
 
 # AI / Hardware acceleration
-ai-hwaccel = "0.19.3"
+ai-hwaccel = "0.20.3"
 
 # Encoding
 base64 = "0.22"

@@ -280,6 +280,20 @@ pub async fn set_proxy_mode(_enabled: bool) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub async fn measure_loudness(path: String) -> Result<f64, String> {
+    tazama_media::init().map_err(|e| e.to_string())?;
+
+    let path = std::path::PathBuf::from(path);
+    tokio::task::spawn_blocking(move || {
+        let audio_buf = tazama_media::decode::audio::AudioDecoder::decode_all(&path)
+            .map_err(|e| e.to_string())?;
+        Ok(tazama_media::loudness::measure_loudness(&audio_buf))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 pub async fn detect_hardware() -> Result<serde_json::Value, String> {
     let hardware = tazama_media::hwaccel::hardware_summary();
     let encoders = tazama_media::available_encoders();

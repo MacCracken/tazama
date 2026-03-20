@@ -16,8 +16,8 @@ pub use effect::{Effect, EffectId, EffectKind, TransitionKind};
 pub use keyframe::{Interpolation, Keyframe, KeyframeId, KeyframeTrack, KeyframeTrackId};
 pub use marker::{Marker, MarkerColor, MarkerId};
 pub use media_info::{
-    AudioStreamInfo, Codec, ContainerFormat, MediaInfo, ThumbnailSpec, VideoStreamInfo,
-    WaveformData,
+    AudioStreamInfo, Codec, ContainerFormat, MediaInfo, ThumbnailSpec, ThumbnailStrategy,
+    VideoStreamInfo, WaveformData,
 };
 pub use multicam::{MultiCamGroup, MultiCamGroupId};
 pub use playback::{PlaybackPosition, PlaybackState};

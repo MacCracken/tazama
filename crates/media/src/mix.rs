@@ -137,6 +137,9 @@ fn apply_clip_effects(
                     }
                 }
             }
+            EffectKind::LoudnessNormalize { target_lufs } => {
+                crate::loudness::normalize_audio(samples, channels, sample_rate, *target_lufs);
+            }
             EffectKind::FadeIn { duration_frames } => {
                 apply_fade_in(samples, sample_rate, channels, *duration_frames, fps);
             }

@@ -60,11 +60,25 @@ pub struct WaveformData {
     pub peaks: Vec<Vec<(f32, f32)>>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ThumbnailStrategy {
+    SceneBased,
+    ContentBased,
+}
+
+impl Default for ThumbnailStrategy {
+    fn default() -> Self {
+        Self::SceneBased
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct ThumbnailSpec {
     pub width: u32,
     pub height: u32,
     pub interval_ms: u64,
+    #[serde(default)]
+    pub strategy: ThumbnailStrategy,
 }
 
 #[cfg(test)]
@@ -129,6 +143,7 @@ mod tests {
             width: 320,
             height: 180,
             interval_ms: 1000,
+            strategy: ThumbnailStrategy::SceneBased,
         };
 
         let json = serde_json::to_string(&spec).unwrap();
@@ -136,6 +151,20 @@ mod tests {
         assert_eq!(round_tripped.width, spec.width);
         assert_eq!(round_tripped.height, spec.height);
         assert_eq!(round_tripped.interval_ms, spec.interval_ms);
+        assert_eq!(round_tripped.strategy, spec.strategy);
+    }
+
+    #[test]
+    fn thumbnail_strategy_default_is_scene_based() {
+        assert_eq!(ThumbnailStrategy::default(), ThumbnailStrategy::SceneBased);
+    }
+
+    #[test]
+    fn thumbnail_spec_strategy_defaults_on_deserialize() {
+        // JSON without strategy field should default to SceneBased
+        let json = r#"{"width":320,"height":180,"interval_ms":1000}"#;
+        let spec: ThumbnailSpec = serde_json::from_str(json).unwrap();
+        assert_eq!(spec.strategy, ThumbnailStrategy::SceneBased);
     }
 
     #[test]

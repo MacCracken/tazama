@@ -92,6 +92,9 @@ pub enum EffectKind {
         y: f32,
     },
 
+    // Audio loudness normalization
+    LoudnessNormalize { target_lufs: f32 },
+
     // Plugin effect
     Plugin {
         plugin_id: String,
@@ -444,6 +447,20 @@ mod tests {
         assert!(matches!(back.kind, EffectKind::Text { .. }));
         if let EffectKind::Text { content, .. } = &back.kind {
             assert_eq!(content, "");
+        } else {
+            unreachable!();
+        }
+    }
+
+    #[test]
+    fn effect_serde_loudness_normalize() {
+        let effect = Effect::new(EffectKind::LoudnessNormalize { target_lufs: -14.0 });
+        let json = serde_json::to_string(&effect).unwrap();
+        let back: Effect = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.id, effect.id);
+        assert!(matches!(back.kind, EffectKind::LoudnessNormalize { .. }));
+        if let EffectKind::LoudnessNormalize { target_lufs } = &back.kind {
+            assert!((target_lufs - (-14.0)).abs() < 1e-6);
         } else {
             unreachable!();
         }

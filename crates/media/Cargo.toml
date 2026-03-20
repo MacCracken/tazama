@@ -19,7 +19,7 @@ thiserror.workspace = true
 tracing.workspace = true
 cpal.workspace = true
 rustfft = "6"
-tarang = { version = "0.19.3", features = ["openh264", "openh264-enc", "vpx", "dav1d"] }
+tarang = { version = "0.20.3", features = ["openh264", "openh264-enc", "vpx", "dav1d"] }
 symphonia = { version = "0.5", features = ["all"] }
 ai-hwaccel.workspace = true
 wasmtime = { version = "29", optional = true }

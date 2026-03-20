@@ -1,7 +1,8 @@
-use std::io::Write;
+use std::io::{Seek, Write};
 use std::time::Duration;
 
 use bytes::Bytes;
+use tarang::demux::mux::{MkvMuxer, Mp4Muxer, Muxer, MuxConfig, VideoMuxConfig};
 use tokio::sync::watch;
 use tracing::{debug, error, info, info_span, warn};
 
@@ -13,15 +14,10 @@ use crate::error::MediaPipelineError;
 ///
 /// This provides the same interface as the GStreamer-based [`super::pipeline::ExportPipeline`]
 /// but routes encoding through tarang video encoders (openh264) and audio encoders
-/// (FLAC), with a custom EBML muxer for MKV output.
+/// (FLAC), with tarang's muxers for MKV/MP4 output.
 ///
-/// **Supported natively:** MKV (H.264 video + audio via tarang encoders + EBML mux)
-/// **Falls back to GStreamer:** MP4, WebM, ProRes, DnxHr, GIF
-///
-/// WebM would use VP9 encoding via `vpx-enc`, but that feature requires a
-/// compatible libvpx build. When `vpx-enc` is unavailable, WebM falls back
-/// to GStreamer.
-// TODO: enable WebM via tarang when `vpx-enc` feature compiles on this system.
+/// **Supported natively:** MKV, MP4 (H.264 video + audio via tarang encoders + muxers)
+/// **Falls back to GStreamer:** WebM, ProRes, DnxHr, GIF
 pub struct TarangExportPipeline;
 
 impl TarangExportPipeline {
@@ -32,12 +28,14 @@ impl TarangExportPipeline {
         total_frames: u64,
     ) -> Result<watch::Receiver<ExportProgress>, MediaPipelineError> {
         match config.format {
-            ExportFormat::Mkv => {
-                info!("tarang export pipeline: MKV format, encoding via tarang (H.264 + audio)");
+            ExportFormat::Mkv | ExportFormat::Mp4 => {
+                info!(
+                    "tarang export pipeline: {:?} format, encoding via tarang (H.264 + audio)",
+                    config.format
+                );
                 Self::run_tarang(config, video_rx, audio_rx, total_frames)
             }
-            ExportFormat::Mp4
-            | ExportFormat::WebM
+            ExportFormat::WebM
             | ExportFormat::ProRes
             | ExportFormat::DnxHr
             | ExportFormat::Gif => {
@@ -148,278 +146,110 @@ fn select_audio_codec(config: &ExportConfig) -> tarang::core::AudioCodec {
     }
 }
 
-/// Convert RGBA pixel data to YUV420p.
+/// Convert RGBA pixel data to YUV420p via tarang's pixel format conversion.
 fn rgba_to_yuv420p(rgba: &[u8], width: u32, height: u32) -> Vec<u8> {
-    let w = width as usize;
-    let h = height as usize;
-    let chroma_w = w / 2;
-    let chroma_h = h / 2;
-    let mut yuv = vec![0u8; w * h + 2 * chroma_w * chroma_h];
-
-    // Y plane
-    for y in 0..h {
-        for x in 0..w {
-            let i = (y * w + x) * 4;
-            let r = rgba[i] as f32;
-            let g = rgba[i + 1] as f32;
-            let b = rgba[i + 2] as f32;
-            yuv[y * w + x] = (0.299 * r + 0.587 * g + 0.114 * b).clamp(0.0, 255.0) as u8;
-        }
-    }
-
-    // U and V planes (subsampled 2x2)
-    let u_offset = w * h;
-    let v_offset = u_offset + chroma_w * chroma_h;
-    for y in (0..h).step_by(2) {
-        for x in (0..w).step_by(2) {
-            let i = (y * w + x) * 4;
-            let r = rgba[i] as f32;
-            let g = rgba[i + 1] as f32;
-            let b = rgba[i + 2] as f32;
-            let u = (-0.169 * r - 0.331 * g + 0.500 * b + 128.0).clamp(0.0, 255.0) as u8;
-            let v = (0.500 * r - 0.419 * g - 0.081 * b + 128.0).clamp(0.0, 255.0) as u8;
-            let ux = (y / 2) * chroma_w + (x / 2);
-            yuv[u_offset + ux] = u;
-            yuv[v_offset + ux] = v;
-        }
-    }
-    yuv
+    let rgb: Vec<u8> = rgba.chunks_exact(4).flat_map(|c| &c[..3]).copied().collect();
+    let rgb_frame = tarang::core::VideoFrame {
+        data: Bytes::from(rgb),
+        pixel_format: tarang::core::PixelFormat::Rgb24,
+        width,
+        height,
+        timestamp: Duration::ZERO,
+    };
+    tarang::video::convert::rgb24_to_yuv420p(&rgb_frame)
+        .expect("RGB24 to YUV420p conversion")
+        .data
+        .to_vec()
 }
 
 /// Convert tazama AudioBuffer (interleaved f32 samples) to tarang AudioBuffer (Bytes).
 fn convert_audio_buffer(buf: &AudioBuffer) -> tarang::core::AudioBuffer {
     let byte_data: Vec<u8> = buf.samples.iter().flat_map(|s| s.to_le_bytes()).collect();
-    let num_samples = buf.samples.len() / buf.channels.max(1) as usize;
+    let num_frames = buf.samples.len() / buf.channels.max(1) as usize;
     tarang::core::AudioBuffer {
         data: Bytes::from(byte_data),
         sample_format: tarang::core::SampleFormat::F32,
         channels: buf.channels,
         sample_rate: buf.sample_rate,
-        num_samples,
+        num_frames,
         timestamp: Duration::from_nanos(buf.timestamp_ns),
     }
 }
 
-/// Track configuration for the dual-track muxer.
-struct MuxerTrackConfig<'a> {
-    video_codec: &'a str,
-    width: u32,
-    height: u32,
-    frame_rate: f64,
-    audio_codec_id: &'a str,
-    sample_rate: u32,
-    channels: u16,
+/// Build `MuxConfig` for audio from the export configuration.
+fn build_audio_mux_config(config: &ExportConfig, audio_codec: tarang::core::AudioCodec) -> MuxConfig {
+    MuxConfig {
+        codec: audio_codec,
+        sample_rate: config.sample_rate,
+        channels: config.channels,
+        bits_per_sample: 16,
+    }
 }
 
-/// Simple dual-track MKV/WebM muxer using EBML primitives.
-///
-/// Writes both a video track (track 1) and an audio track (track 2)
-/// into a Matroska or WebM container. Uses a streaming layout with
-/// unknown-size segments and clusters.
-struct DualTrackMkvMuxer<W: Write> {
-    writer: W,
-    is_webm: bool,
-    cluster_open: bool,
-    cluster_timecode_ms: u64,
-    packets_in_cluster: u32,
+/// Build `VideoMuxConfig` from the export configuration.
+fn build_video_mux_config(config: &ExportConfig) -> VideoMuxConfig {
+    VideoMuxConfig {
+        codec: tarang::core::VideoCodec::H264,
+        width: config.width,
+        height: config.height,
+    }
 }
 
-impl<W: Write> DualTrackMkvMuxer<W> {
-    fn new(writer: W, is_webm: bool) -> Self {
-        Self {
-            writer,
-            is_webm,
-            cluster_open: false,
-            cluster_timecode_ms: 0,
-            packets_in_cluster: 0,
-        }
+/// Trait object wrapper so MKV and MP4 muxers share the same write path.
+trait ExportMuxer {
+    fn write_header(&mut self) -> Result<(), MediaPipelineError>;
+    fn write_video_packet(&mut self, data: &[u8]) -> Result<(), MediaPipelineError>;
+    fn write_audio_packet(&mut self, data: &[u8]) -> Result<(), MediaPipelineError>;
+    fn finalize(&mut self) -> Result<(), MediaPipelineError>;
+}
+
+struct MkvExportMuxer<W: Write>(MkvMuxer<W>);
+
+impl<W: Write> ExportMuxer for MkvExportMuxer<W> {
+    fn write_header(&mut self) -> Result<(), MediaPipelineError> {
+        self.0
+            .write_header()
+            .map_err(|e| MediaPipelineError::Export(format!("MKV header: {e}")))
     }
-
-    fn write_header(&mut self, tc: &MuxerTrackConfig<'_>) -> Result<(), MediaPipelineError> {
-        let video_codec = tc.video_codec;
-        let width = tc.width;
-        let height = tc.height;
-        let frame_rate = tc.frame_rate;
-        let audio_codec_id = tc.audio_codec_id;
-        let sample_rate = tc.sample_rate;
-        let channels = tc.channels;
-        use tarang::demux::ebml;
-
-        // EBML Header
-        let mut ebml_header = Vec::new();
-        ebml::write_uint(&mut ebml_header, 0x4286, 1); // EBMLVersion
-        ebml::write_uint(&mut ebml_header, 0x42F7, 1); // EBMLReadVersion
-        ebml::write_uint(&mut ebml_header, 0x42F2, 4); // EBMLMaxIDLength
-        ebml::write_uint(&mut ebml_header, 0x42F3, 8); // EBMLMaxSizeLength
-        let doc_type = if self.is_webm { "webm" } else { "matroska" };
-        ebml::write_string(&mut ebml_header, 0x4282, doc_type);
-        ebml::write_uint(&mut ebml_header, 0x4287, 4); // DocTypeVersion
-        ebml::write_uint(&mut ebml_header, 0x4285, 2); // DocTypeReadVersion
-
-        ebml::write_master_to_writer(&mut self.writer, 0x1A45DFA3, &ebml_header)
-            .map_err(|e| MediaPipelineError::Export(format!("EBML header write: {e}")))?;
-
-        // Segment (unknown size)
-        ebml::write_id_to_writer(&mut self.writer, 0x18538067)
-            .map_err(|e| MediaPipelineError::Export(format!("segment ID write: {e}")))?;
-        self.writer
-            .write_all(&[0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF])
-            .map_err(|e| MediaPipelineError::Export(format!("segment size write: {e}")))?;
-
-        // Info element
-        let mut info = Vec::new();
-        ebml::write_uint(&mut info, 0x2AD7B1, 1_000_000); // TimecodeScale = 1ms
-        ebml::write_string(&mut info, 0x4D80, "tazama"); // MuxingApp
-        ebml::write_string(&mut info, 0x5741, "tazama"); // WritingApp
-        let mut info_buf = Vec::new();
-        ebml::write_master(&mut info_buf, 0x1549A966, &info);
-        self.writer
-            .write_all(&info_buf)
-            .map_err(|e| MediaPipelineError::Export(format!("info write: {e}")))?;
-
-        // Tracks element
-        let mut tracks = Vec::new();
-
-        // Track 1: Video
-        {
-            let mut track_entry = Vec::new();
-            ebml::write_uint(&mut track_entry, 0xD7, 1); // TrackNumber
-            ebml::write_uint(&mut track_entry, 0x73C5, 1); // TrackUID
-            ebml::write_uint(&mut track_entry, 0x83, 1); // TrackType = video
-            ebml::write_string(&mut track_entry, 0x86, video_codec); // CodecID
-            ebml::write_uint(&mut track_entry, 0x9C, 0); // FlagLacing = 0
-
-            // Video settings sub-element
-            let mut video_settings = Vec::new();
-            ebml::write_uint(&mut video_settings, 0xB0, width as u64); // PixelWidth
-            ebml::write_uint(&mut video_settings, 0xBA, height as u64); // PixelHeight
-            // DefaultDuration in nanoseconds
-            if frame_rate > 0.0 {
-                let default_dur_ns = (1_000_000_000.0 / frame_rate) as u64;
-                ebml::write_uint(&mut track_entry, 0x23E383, default_dur_ns);
-            }
-            ebml::write_master(&mut track_entry, 0xE0, &video_settings);
-
-            ebml::write_master(&mut tracks, 0xAE, &track_entry);
-        }
-
-        // Track 2: Audio
-        {
-            let mut track_entry = Vec::new();
-            ebml::write_uint(&mut track_entry, 0xD7, 2); // TrackNumber
-            ebml::write_uint(&mut track_entry, 0x73C5, 2); // TrackUID
-            ebml::write_uint(&mut track_entry, 0x83, 2); // TrackType = audio
-            ebml::write_string(&mut track_entry, 0x86, audio_codec_id); // CodecID
-
-            let mut audio_settings = Vec::new();
-            ebml::write_float(&mut audio_settings, 0xB5, sample_rate as f64); // SamplingFrequency
-            ebml::write_uint(&mut audio_settings, 0x9F, channels as u64); // Channels
-            ebml::write_master(&mut track_entry, 0xE1, &audio_settings);
-
-            ebml::write_master(&mut tracks, 0xAE, &track_entry);
-        }
-
-        let mut tracks_buf = Vec::new();
-        ebml::write_master(&mut tracks_buf, 0x1654AE6B, &tracks);
-        self.writer
-            .write_all(&tracks_buf)
-            .map_err(|e| MediaPipelineError::Export(format!("tracks write: {e}")))?;
-
-        // Start first cluster
-        self.start_cluster(0)?;
-
-        Ok(())
+    fn write_video_packet(&mut self, data: &[u8]) -> Result<(), MediaPipelineError> {
+        self.0
+            .write_video_packet(data)
+            .map_err(|e| MediaPipelineError::Export(format!("MKV video packet: {e}")))
     }
-
-    fn start_cluster(&mut self, timecode_ms: u64) -> Result<(), MediaPipelineError> {
-        use tarang::demux::ebml;
-
-        // Cluster with unknown size
-        ebml::write_id_to_writer(&mut self.writer, 0x1F43B675)
-            .map_err(|e| MediaPipelineError::Export(format!("cluster ID: {e}")))?;
-        self.writer
-            .write_all(&[0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF])
-            .map_err(|e| MediaPipelineError::Export(format!("cluster size: {e}")))?;
-
-        // Timecode
-        let mut tc_buf = Vec::new();
-        ebml::write_uint(&mut tc_buf, 0xE7, timecode_ms);
-        self.writer
-            .write_all(&tc_buf)
-            .map_err(|e| MediaPipelineError::Export(format!("cluster timecode: {e}")))?;
-
-        self.cluster_timecode_ms = timecode_ms;
-        self.cluster_open = true;
-        self.packets_in_cluster = 0;
-        Ok(())
+    fn write_audio_packet(&mut self, data: &[u8]) -> Result<(), MediaPipelineError> {
+        self.0
+            .write_packet(data)
+            .map_err(|e| MediaPipelineError::Export(format!("MKV audio packet: {e}")))
     }
-
-    /// Write a SimpleBlock for the given track.
-    fn write_simple_block(
-        &mut self,
-        track_number: u8,
-        timestamp_ms: u64,
-        data: &[u8],
-        keyframe: bool,
-    ) -> Result<(), MediaPipelineError> {
-        use tarang::demux::ebml;
-
-        // Start a new cluster every ~5 seconds or 500 packets
-        if self.packets_in_cluster > 500
-            || (self.cluster_open && timestamp_ms > self.cluster_timecode_ms + 5000)
-        {
-            self.start_cluster(timestamp_ms)?;
-        }
-
-        let relative_ts = timestamp_ms.saturating_sub(self.cluster_timecode_ms);
-        let relative_ts_i16 = relative_ts.min(i16::MAX as u64) as i16;
-
-        let mut block = Vec::new();
-        ebml::write_vint(&mut block, track_number as u64); // track number
-        block.extend_from_slice(&relative_ts_i16.to_be_bytes()); // relative timecode
-        let flags = if keyframe { 0x80u8 } else { 0x00u8 };
-        block.push(flags);
-        block.extend_from_slice(data);
-
-        let mut block_buf = Vec::new();
-        ebml::write_id(&mut block_buf, 0xA3); // SimpleBlock ID
-        ebml::write_vint(&mut block_buf, block.len() as u64);
-        block_buf.extend_from_slice(&block);
-
-        self.writer
-            .write_all(&block_buf)
-            .map_err(|e| MediaPipelineError::Export(format!("simple block write: {e}")))?;
-
-        self.packets_in_cluster += 1;
-        Ok(())
-    }
-
     fn finalize(&mut self) -> Result<(), MediaPipelineError> {
-        self.writer
-            .flush()
-            .map_err(|e| MediaPipelineError::Export(format!("finalize flush: {e}")))?;
-        Ok(())
+        self.0
+            .finalize()
+            .map_err(|e| MediaPipelineError::Export(format!("MKV finalize: {e}")))
     }
 }
 
-/// Determine the MKV codec ID string for video based on format.
-fn video_codec_id(format: ExportFormat) -> &'static str {
-    match format {
-        ExportFormat::WebM => "V_VP9",
-        ExportFormat::Mkv => "V_MPEG4/ISO/AVC", // H.264
-        _ => "V_MPEG4/ISO/AVC",
-    }
-}
+struct Mp4ExportMuxer<W: Write + Seek>(Mp4Muxer<W>);
 
-/// Determine the MKV codec ID string for audio.
-fn audio_codec_id(codec: tarang::core::AudioCodec) -> &'static str {
-    match codec {
-        tarang::core::AudioCodec::Opus => "A_OPUS",
-        tarang::core::AudioCodec::Flac => "A_FLAC",
-        tarang::core::AudioCodec::Aac => "A_AAC",
-        tarang::core::AudioCodec::Vorbis => "A_VORBIS",
-        tarang::core::AudioCodec::Mp3 => "A_MPEG/L3",
-        _ => "A_PCM/INT/LIT",
+impl<W: Write + Seek> ExportMuxer for Mp4ExportMuxer<W> {
+    fn write_header(&mut self) -> Result<(), MediaPipelineError> {
+        self.0
+            .write_header()
+            .map_err(|e| MediaPipelineError::Export(format!("MP4 header: {e}")))
+    }
+    fn write_video_packet(&mut self, data: &[u8]) -> Result<(), MediaPipelineError> {
+        self.0
+            .write_video_packet(data)
+            .map_err(|e| MediaPipelineError::Export(format!("MP4 video packet: {e}")))
+    }
+    fn write_audio_packet(&mut self, data: &[u8]) -> Result<(), MediaPipelineError> {
+        self.0
+            .write_packet(data)
+            .map_err(|e| MediaPipelineError::Export(format!("MP4 audio packet: {e}")))
+    }
+    fn finalize(&mut self) -> Result<(), MediaPipelineError> {
+        self.0
+            .finalize()
+            .map_err(|e| MediaPipelineError::Export(format!("MP4 finalize: {e}")))
     }
 }
 
@@ -436,7 +266,7 @@ fn run_tarang_export(
 
     // Create output file
     let file = std::fs::File::create(&config.output_path)?;
-    let mut writer = std::io::BufWriter::new(file);
+    let writer = std::io::BufWriter::new(file);
 
     // Create video encoder
     let mut video_encoder = create_video_encoder(&config)?;
@@ -460,20 +290,22 @@ fn run_tarang_export(
         }
     };
 
-    // Create muxer
-    let is_webm = config.format == ExportFormat::WebM;
+    // Build mux configs
+    let audio_mux_config = build_audio_mux_config(&config, audio_codec);
+    let video_mux_config = build_video_mux_config(&config);
+
     let frame_rate = config.frame_rate.0 as f64 / config.frame_rate.1.max(1) as f64;
 
-    let mut muxer = DualTrackMkvMuxer::new(&mut writer, is_webm);
-    muxer.write_header(&MuxerTrackConfig {
-        video_codec: video_codec_id(config.format),
-        width: config.width,
-        height: config.height,
-        frame_rate,
-        audio_codec_id: audio_codec_id(audio_codec),
-        sample_rate: config.sample_rate,
-        channels: config.channels,
-    })?;
+    // Create muxer based on format
+    let mut muxer: Box<dyn ExportMuxer> = match config.format {
+        ExportFormat::Mp4 => Box::new(Mp4ExportMuxer(
+            Mp4Muxer::new_with_video(writer, audio_mux_config, video_mux_config),
+        )),
+        _ => Box::new(MkvExportMuxer(
+            MkvMuxer::new_webm(writer, audio_mux_config, video_mux_config),
+        )),
+    };
+    muxer.write_header()?;
 
     info!(
         "tarang export started: {:?}, {}x{}, {:.2} fps, audio={:?}",
@@ -495,11 +327,10 @@ fn run_tarang_export(
 
         // Encode
         let encoded = video_encoder.encode(&tarang_frame)?;
-        let timestamp_ms = frame.timestamp_ns / 1_000_000;
 
         // Write encoded data to muxer
         if !encoded.is_empty() {
-            muxer.write_simple_block(1, timestamp_ms, &encoded, true)?;
+            muxer.write_video_packet(&encoded)?;
         }
 
         frames_written += 1;
@@ -509,9 +340,6 @@ fn run_tarang_export(
             done: false,
         });
     }
-
-    // openh264 encoder does not buffer frames, so no flush needed for video.
-    // If VpxEncoder is added in the future, call encoder.flush() here.
 
     debug!("video encoding complete: {frames_written} frames");
 
@@ -524,13 +352,12 @@ fn run_tarang_export(
 
         if let Some(ref mut enc) = audio_encoder {
             let tarang_buf = convert_audio_buffer(&audio_buf);
-            let timestamp_ms = audio_buf.timestamp_ns / 1_000_000;
 
             match enc.encode(&tarang_buf) {
                 Ok(packets) => {
                     for packet in &packets {
                         if !packet.is_empty() {
-                            muxer.write_simple_block(2, timestamp_ms, packet, true)?;
+                            muxer.write_audio_packet(packet)?;
                             audio_packets_written += 1;
                         }
                     }
@@ -548,7 +375,7 @@ fn run_tarang_export(
             Ok(packets) => {
                 for packet in &packets {
                     if !packet.is_empty() {
-                        muxer.write_simple_block(2, 0, packet, true)?;
+                        muxer.write_audio_packet(packet)?;
                         audio_packets_written += 1;
                     }
                 }
@@ -563,9 +390,6 @@ fn run_tarang_export(
 
     // Finalize
     muxer.finalize()?;
-    writer
-        .flush()
-        .map_err(|e| MediaPipelineError::Export(format!("final flush: {e}")))?;
 
     info!("tarang export complete: {:?}", config.output_path);
     Ok(())
@@ -621,7 +445,7 @@ mod tests {
         let tarang_buf = convert_audio_buffer(&buf);
         assert_eq!(tarang_buf.sample_rate, 48000);
         assert_eq!(tarang_buf.channels, 2);
-        assert_eq!(tarang_buf.num_samples, 2); // 4 samples / 2 channels
+        assert_eq!(tarang_buf.num_frames, 2); // 4 samples / 2 channels
         assert_eq!(tarang_buf.data.len(), 16); // 4 floats * 4 bytes
         assert_eq!(tarang_buf.timestamp, Duration::from_millis(1));
     }
@@ -686,84 +510,88 @@ mod tests {
     }
 
     #[test]
-    fn video_codec_id_values() {
-        assert_eq!(video_codec_id(ExportFormat::WebM), "V_VP9");
-        assert_eq!(video_codec_id(ExportFormat::Mkv), "V_MPEG4/ISO/AVC");
-    }
-
-    #[test]
-    fn audio_codec_id_values() {
-        assert_eq!(audio_codec_id(tarang::core::AudioCodec::Opus), "A_OPUS");
-        assert_eq!(audio_codec_id(tarang::core::AudioCodec::Flac), "A_FLAC");
-        assert_eq!(audio_codec_id(tarang::core::AudioCodec::Aac), "A_AAC");
-    }
-
-    #[test]
-    fn dual_track_muxer_writes_ebml_header() {
+    fn mkv_muxer_writes_header() {
         let mut buf = Vec::new();
-        let mut muxer = DualTrackMkvMuxer::new(&mut buf, false);
-        muxer
-            .write_header(&MuxerTrackConfig {
-                video_codec: "V_MPEG4/ISO/AVC",
-                width: 320,
-                height: 240,
-                frame_rate: 30.0,
-                audio_codec_id: "A_OPUS",
-                sample_rate: 48000,
-                channels: 2,
-            })
-            .unwrap();
+        let audio = MuxConfig {
+            codec: tarang::core::AudioCodec::Opus,
+            sample_rate: 48000,
+            channels: 2,
+            bits_per_sample: 16,
+        };
+        let video = VideoMuxConfig {
+            codec: tarang::core::VideoCodec::H264,
+            width: 320,
+            height: 240,
+        };
+        let mut muxer = MkvExportMuxer(MkvMuxer::new_webm(&mut buf, audio, video));
+        muxer.write_header().unwrap();
         // Should start with EBML magic: 0x1A 0x45 0xDF 0xA3
         assert!(buf.len() > 20);
         assert_eq!(&buf[..4], &[0x1A, 0x45, 0xDF, 0xA3]);
     }
 
     #[test]
-    fn dual_track_muxer_webm_doctype() {
-        let mut buf = Vec::new();
-        let mut muxer = DualTrackMkvMuxer::new(&mut buf, true);
-        muxer
-            .write_header(&MuxerTrackConfig {
-                video_codec: "V_VP9",
-                width: 320,
-                height: 240,
-                frame_rate: 30.0,
-                audio_codec_id: "A_OPUS",
-                sample_rate: 48000,
-                channels: 2,
-            })
-            .unwrap();
-        // Should contain "webm" doctype string
-        let s = String::from_utf8_lossy(&buf);
-        assert!(s.contains("webm"));
+    fn mp4_muxer_writes_header() {
+        let mut buf = std::io::Cursor::new(Vec::new());
+        let audio = MuxConfig {
+            codec: tarang::core::AudioCodec::Aac,
+            sample_rate: 48000,
+            channels: 2,
+            bits_per_sample: 16,
+        };
+        let video = VideoMuxConfig {
+            codec: tarang::core::VideoCodec::H264,
+            width: 320,
+            height: 240,
+        };
+        let mut muxer = Mp4ExportMuxer(Mp4Muxer::new_with_video(&mut buf, audio, video));
+        muxer.write_header().unwrap();
+        let data = buf.into_inner();
+        assert!(data.len() > 8, "MP4 header should produce output");
     }
 
     #[test]
-    fn dual_track_muxer_write_blocks() {
+    fn mkv_muxer_write_packets() {
         let mut buf = Vec::new();
-        {
-            let mut muxer = DualTrackMkvMuxer::new(&mut buf, false);
-            muxer
-                .write_header(&MuxerTrackConfig {
-                    video_codec: "V_MPEG4/ISO/AVC",
-                    width: 320,
-                    height: 240,
-                    frame_rate: 30.0,
-                    audio_codec_id: "A_OPUS",
-                    sample_rate: 48000,
-                    channels: 2,
-                })
-                .unwrap();
-            // Write a video block
-            muxer
-                .write_simple_block(1, 0, &[0x00, 0x00, 0x01], true)
-                .unwrap();
-            // Write an audio block
-            muxer.write_simple_block(2, 0, &[0xAA, 0xBB], true).unwrap();
-            muxer.finalize().unwrap();
-        }
-        // Should contain EBML header + blocks
-        assert!(buf.len() > 50, "output should have header + block data");
+        let audio = MuxConfig {
+            codec: tarang::core::AudioCodec::Opus,
+            sample_rate: 48000,
+            channels: 2,
+            bits_per_sample: 16,
+        };
+        let video = VideoMuxConfig {
+            codec: tarang::core::VideoCodec::H264,
+            width: 320,
+            height: 240,
+        };
+        let mut muxer = MkvExportMuxer(MkvMuxer::new_webm(&mut buf, audio, video));
+        muxer.write_header().unwrap();
+        muxer.write_video_packet(&[0x00, 0x00, 0x01]).unwrap();
+        muxer.write_audio_packet(&[0xAA, 0xBB]).unwrap();
+        muxer.finalize().unwrap();
+        assert!(buf.len() > 50, "output should have header + packet data");
+    }
+
+    #[test]
+    fn build_mux_configs() {
+        let config = ExportConfig {
+            output_path: "/tmp/test.mkv".into(),
+            format: ExportFormat::Mkv,
+            width: 1920,
+            height: 1080,
+            frame_rate: (30, 1),
+            sample_rate: 48000,
+            channels: 2,
+            audio_codec: None,
+            encoder: super::super::ExportEncoder::default(),
+        };
+        let audio_cfg = build_audio_mux_config(&config, tarang::core::AudioCodec::Opus);
+        assert_eq!(audio_cfg.sample_rate, 48000);
+        assert_eq!(audio_cfg.channels, 2);
+
+        let video_cfg = build_video_mux_config(&config);
+        assert_eq!(video_cfg.width, 1920);
+        assert_eq!(video_cfg.height, 1080);
     }
 
     #[test]

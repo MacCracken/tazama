@@ -40,9 +40,9 @@ dependencies = [
 
 [[package]]
 name = "ai-hwaccel"
-version = "0.19.3"
+version = "0.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2869310c2cb642fa12e90821175672e5969f14234ebad897a5880f2f84d6309b"
+checksum = "da8db15e7c0b66da2ee1dede56c1b260b5b0badc43bf550691ce2dc3b02a75c6"
 dependencies = [
  "serde",
  "serde_json",
@@ -6619,9 +6619,9 @@ dependencies = [
 
 [[package]]
 name = "tarang"
-version = "0.19.3"
+version = "0.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c92c4f713b1e0d9580615bbafeff3a96944eca97983dadb7976fbf390bb0b4df"
+checksum = "5a0373222649618ef75694093ee4bbf81d8496a600d8b7a6f1ed25c2f81cad3f"
 dependencies = [
  "anyhow",
  "bytes",
@@ -6949,7 +6949,7 @@ dependencies = [
 
 [[package]]
 name = "tazama"
-version = "2026.3.19"
+version = "2026.3.20"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -6973,7 +6973,7 @@ dependencies = [
 
 [[package]]
 name = "tazama-core"
-version = "2026.3.19"
+version = "2026.3.20"
 dependencies = [
  "chrono",
  "criterion",
@@ -6985,7 +6985,7 @@ dependencies = [
 
 [[package]]
 name = "tazama-gpu"
-version = "2026.3.19"
+version = "2026.3.20"
 dependencies = [
  "ai-hwaccel",
  "ash",
@@ -7003,7 +7003,7 @@ dependencies = [
 
 [[package]]
 name = "tazama-mcp"
-version = "2026.3.19"
+version = "2026.3.20"
 dependencies = [
  "anyhow",
  "image",
@@ -7020,7 +7020,7 @@ dependencies = [
 
 [[package]]
 name = "tazama-media"
-version = "2026.3.19"
+version = "2026.3.20"
 dependencies = [
  "ai-hwaccel",
  "bytes",
@@ -7045,7 +7045,7 @@ dependencies = [
 
 [[package]]
 name = "tazama-storage"
-version = "2026.3.19"
+version = "2026.3.20"
 dependencies = [
  "chrono",
  "serde",

@@ -3,6 +3,7 @@ pub mod dsp;
 pub mod error;
 pub mod export;
 pub mod hwaccel;
+pub mod loudness;
 pub mod mix;
 pub mod playback;
 pub mod probe;

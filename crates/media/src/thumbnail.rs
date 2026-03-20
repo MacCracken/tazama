@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use bytes::Bytes;
-use tazama_core::ThumbnailSpec;
+use tazama_core::{ThumbnailSpec, ThumbnailStrategy};
 
 use crate::decode::video::VideoDecoder;
 use crate::error::MediaPipelineError;
@@ -94,7 +94,19 @@ fn generate_thumbnails_tarang_sync(
     path: &Path,
     spec: ThumbnailSpec,
 ) -> Result<Vec<(u64, Bytes)>, MediaPipelineError> {
+    match spec.strategy {
+        ThumbnailStrategy::ContentBased => generate_thumbnails_content_based(path, spec),
+        ThumbnailStrategy::SceneBased => generate_thumbnails_scene_based(path, spec),
+    }
+}
+
+/// Scene-based thumbnail generation using `SceneDetector`.
+fn generate_thumbnails_scene_based(
+    path: &Path,
+    spec: ThumbnailSpec,
+) -> Result<Vec<(u64, Bytes)>, MediaPipelineError> {
     use tarang::ai::{SceneDetectionConfig, SceneDetector};
+    use tarang::video::scale::{scale_frame, ScaleFilter};
 
     let mut demuxer = create_demuxer(path)?;
     let info = demuxer.probe()?;
@@ -111,7 +123,6 @@ fn generate_thumbnails_tarang_sync(
 
     let interval_ns = spec.interval_ms * 1_000_000;
 
-    // Decode frames at the requested interval and run scene detection
     let mut scene_detector = SceneDetector::new(SceneDetectionConfig::default());
     let mut candidate_frames: Vec<(u64, tarang::core::VideoFrame, bool)> = Vec::new();
     let mut next_sample_ns: u64 = 0;
@@ -142,7 +153,6 @@ fn generate_thumbnails_tarang_sync(
         }
     }
 
-    // Flush decoder
     let _ = decoder.flush();
     while let Ok(tarang_frame) = decoder.receive_frame() {
         let ts_ns = tarang_frame.timestamp.as_nanos() as u64;
@@ -157,18 +167,107 @@ fn generate_thumbnails_tarang_sync(
     let _boundaries = scene_detector.finish();
 
     // Prioritize scene boundary frames, then keep all sampled frames
-    // Sort: scene boundaries first, then by timestamp
     candidate_frames.sort_by(|a, b| b.2.cmp(&a.2).then_with(|| a.0.cmp(&b.0)));
 
-    // Convert to RGBA output
     let mut thumbnails = Vec::new();
-    // Re-sort by timestamp for output
     candidate_frames.sort_by_key(|f| f.0);
+
+    let needs_scaling = spec.width > 0 && spec.height > 0;
 
     for (idx, tarang_frame, _) in &candidate_frames {
         let timestamp_ms = tarang_frame.timestamp.as_millis() as u64;
-        let tazama_frame = crate::convert::tarang_frame_to_tazama(tarang_frame, *idx)?;
+
+        let frame_to_convert = if needs_scaling
+            && (tarang_frame.width != spec.width || tarang_frame.height != spec.height)
+        {
+            scale_frame(tarang_frame, spec.width, spec.height, ScaleFilter::Lanczos3)
+                .map_err(|e| MediaPipelineError::Decode(e.to_string()))?
+        } else {
+            tarang_frame.clone()
+        };
+
+        let tazama_frame = crate::convert::tarang_frame_to_tazama(&frame_to_convert, *idx)?;
         thumbnails.push((timestamp_ms, tazama_frame.data));
+    }
+
+    Ok(thumbnails)
+}
+
+/// Content-based thumbnail generation using `ThumbnailGenerator`.
+fn generate_thumbnails_content_based(
+    path: &Path,
+    spec: ThumbnailSpec,
+) -> Result<Vec<(u64, Bytes)>, MediaPipelineError> {
+    use tarang::ai::{SceneDetectionConfig, SceneDetector, ThumbnailConfig, ThumbnailGenerator};
+
+    let mut demuxer = create_demuxer(path)?;
+    let info = demuxer.probe()?;
+
+    let (video_stream_idx, codec) = find_video_stream(&info)
+        .ok_or_else(|| MediaPipelineError::Decode("no video stream found".into()))?;
+
+    let config = tarang::video::DecoderConfig::for_codec(codec)?;
+    let mut decoder = tarang::video::VideoDecoder::new(config)?;
+
+    if let Some(tarang::core::StreamInfo::Video(vs)) = info.streams.get(video_stream_idx) {
+        decoder.init(vs);
+    }
+
+    let interval_ns = spec.interval_ms * 1_000_000;
+
+    let thumb_config = ThumbnailConfig {
+        width: spec.width,
+        height: spec.height,
+        strategy: tarang::ai::ThumbnailStrategy::ContentBased,
+        ..ThumbnailConfig::default()
+    };
+    let mut generator = ThumbnailGenerator::new(thumb_config);
+    let mut scene_detector = SceneDetector::new(SceneDetectionConfig::default());
+    let mut next_sample_ns: u64 = 0;
+
+    loop {
+        let packet = match demuxer.next_packet() {
+            Ok(p) => p,
+            Err(_) => break,
+        };
+
+        if packet.stream_index != video_stream_idx {
+            continue;
+        }
+
+        decoder.send_packet(&packet.data, packet.timestamp)?;
+
+        while let Ok(tarang_frame) = decoder.receive_frame() {
+            let ts_ns = tarang_frame.timestamp.as_nanos() as u64;
+            let is_boundary = scene_detector.feed_frame(&tarang_frame).is_some();
+
+            if ts_ns >= next_sample_ns {
+                generator.consider_frame(&tarang_frame, is_boundary);
+                next_sample_ns = ts_ns + interval_ns;
+            }
+        }
+    }
+
+    let _ = decoder.flush();
+    while let Ok(tarang_frame) = decoder.receive_frame() {
+        let ts_ns = tarang_frame.timestamp.as_nanos() as u64;
+        let is_boundary = scene_detector.feed_frame(&tarang_frame).is_some();
+        if ts_ns >= next_sample_ns {
+            generator.consider_frame(&tarang_frame, is_boundary);
+            next_sample_ns = ts_ns + interval_ns;
+        }
+    }
+
+    let tarang_thumbs = generator
+        .generate()
+        .map_err(|e| MediaPipelineError::Decode(e.to_string()))?;
+
+    let mut thumbnails = Vec::new();
+    for thumb in tarang_thumbs {
+        let timestamp_ms = thumb.timestamp.as_millis() as u64;
+        // Thumbnail data is already encoded (JPEG/PNG); we need RGBA for our pipeline,
+        // so we pass the raw data through. The caller may need to decode if format differs.
+        thumbnails.push((timestamp_ms, Bytes::from(thumb.data)));
     }
 
     Ok(thumbnails)
@@ -220,6 +319,7 @@ mod tests {
             width: 160,
             height: 90,
             interval_ms: 1000,
+            strategy: ThumbnailStrategy::SceneBased,
         };
         let path = PathBuf::from("/tmp/nonexistent_video_tazama_test.mp4");
         let result = generate_thumbnails(&path, spec).await;
@@ -232,6 +332,7 @@ mod tests {
             width: 320,
             height: 180,
             interval_ms: 500,
+            strategy: ThumbnailStrategy::SceneBased,
         };
         assert_eq!(spec.width, 320);
         assert_eq!(spec.height, 180);
@@ -244,6 +345,7 @@ mod tests {
             width: 160,
             height: 90,
             interval_ms: 0,
+            strategy: ThumbnailStrategy::SceneBased,
         };
         assert_eq!(spec.interval_ms, 0);
     }
@@ -254,6 +356,7 @@ mod tests {
             width: 640,
             height: 360,
             interval_ms: 2000,
+            strategy: ThumbnailStrategy::SceneBased,
         };
         let copied = spec;
         let cloned = spec;
@@ -268,6 +371,7 @@ mod tests {
             width: 100,
             height: 50,
             interval_ms: 1000,
+            strategy: ThumbnailStrategy::SceneBased,
         };
         let debug = format!("{:?}", spec);
         assert!(debug.contains("100"));
@@ -281,12 +385,14 @@ mod tests {
             width: 320,
             height: 180,
             interval_ms: 2000,
+            strategy: ThumbnailStrategy::ContentBased,
         };
         let json = serde_json::to_string(&spec).unwrap();
         let deserialized: ThumbnailSpec = serde_json::from_str(&json).unwrap();
         assert_eq!(spec.width, deserialized.width);
         assert_eq!(spec.height, deserialized.height);
         assert_eq!(spec.interval_ms, deserialized.interval_ms);
+        assert_eq!(spec.strategy, deserialized.strategy);
     }
 
     #[test]
@@ -296,10 +402,12 @@ mod tests {
             "height": 360,
             "interval_ms": 500
         });
+        // strategy should default to SceneBased when omitted
         let spec: ThumbnailSpec = serde_json::from_value(val).unwrap();
         assert_eq!(spec.width, 640);
         assert_eq!(spec.height, 360);
         assert_eq!(spec.interval_ms, 500);
+        assert_eq!(spec.strategy, ThumbnailStrategy::SceneBased);
     }
 
     #[test]
@@ -315,6 +423,7 @@ mod tests {
             width: u32::MAX,
             height: u32::MAX,
             interval_ms: u64::MAX,
+            strategy: ThumbnailStrategy::SceneBased,
         };
         let json = serde_json::to_string(&spec).unwrap();
         let back: ThumbnailSpec = serde_json::from_str(&json).unwrap();
@@ -330,6 +439,7 @@ mod tests {
             width: 160,
             height: 90,
             interval_ms: 1000,
+            strategy: ThumbnailStrategy::SceneBased,
         };
         let path = PathBuf::from("/tmp/absolutely_nonexistent_tazama_test_file.mp4");
         let result = generate_thumbnails_gst(&path, spec).await;
@@ -343,6 +453,7 @@ mod tests {
             width: 160,
             height: 90,
             interval_ms: 1000,
+            strategy: ThumbnailStrategy::SceneBased,
         };
         let path = PathBuf::from("/tmp");
         let result = generate_thumbnails_gst(&path, spec).await;

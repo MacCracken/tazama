@@ -112,6 +112,11 @@ export async function setProxyMode(enabled: boolean): Promise<void> {
   return invoke<void>("set_proxy_mode", { enabled });
 }
 
+// Audio loudness measurement
+export async function measureLoudness(path: string): Promise<number> {
+  return invoke("measure_loudness", { path });
+}
+
 // Hardware detection
 export async function detectHardware(): Promise<{
   accelerators: HardwareInfo[];
