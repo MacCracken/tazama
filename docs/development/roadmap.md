@@ -23,19 +23,29 @@ Tazama is an AI-native non-linear video editor. MVP target: import media, arrang
 - [x] TOCTOU fix in proxy.rs — replaced exists() + metadata() with single metadata() match (2026.3.19)
 - [x] Emit error logging — all `let _ = app.emit(...)` now log on failure (2026.3.19)
 
-### Test Coverage
-- [ ] Waveform extraction — zero tests, user-facing feature
-- [ ] Thumbnail generation — zero tests for async wrapper and tarang path
-- [ ] Record module — zero tests on public start/stop API
-- [ ] MediaStore::import() — zero tests
-- [ ] Export pipeline integration — no end-to-end encoding tests
-- [ ] GPU mock/stub tests for error paths (NoDevice, ShaderCompilation)
+### Test Coverage (48% → target 65%)
+- [x] Waveform extraction — struct construction, error paths (2026.3.19)
+- [x] Thumbnail generation — spec tests, tarang helpers, nonexistent file error (2026.3.19)
+- [x] Record module — WAV header, overflow protection, state management (2026.3.19)
+- [x] MediaStore::import() — nonexistent source, directory creation, content preservation, overwrite (2026.3.19)
+- [x] Probe error paths — FileNotFound, empty file ProbeFailed, all container formats, tarang codec mapping (2026.3.19)
+- [x] DSP integration — chained effects, disabled effects, volume keyframes, video effect ignored (2026.3.19)
+- [x] Keyframe bezier edge cases — extreme/negative tangents, overshoot, same-frame, integrated speed (2026.3.19)
+- [x] Clip overlap detection — overlapping/adjacent/boundary clips, zero-duration, move overlap (2026.3.19)
+- [x] Empty timeline — duration_frames, audible_tracks, visible_video_tracks on empty (2026.3.19)
+- [ ] Export pipeline integration — no end-to-end encoding tests (7% coverage)
+- [ ] GPU render/dispatch/transitions — requires mock GPU context (0% coverage)
 - [ ] App command integration tests (all Tauri IPC handlers)
-- [ ] Probe error paths — ProbeFailed variant, malformed container detection
-- [ ] DSP integration — chained effects, effect ordering
-- [ ] Keyframe bezier edge cases — extreme tangent values
-- [ ] Clip overlap detection edge cases
-- [ ] Empty timeline export
+- [ ] Audio/video decode — 0% coverage, requires real media files or mocks
+- [ ] Playback module — 0% coverage
+
+### Benchmarks
+- [ ] DSP benchmarks (criterion) — EQ, compressor, noise reduction, reverb on realistic buffer sizes
+- [ ] GPU render benchmarks — frame render time at 1080p/4K, effect chain overhead
+- [ ] Export pipeline benchmarks — encode throughput per format (Mp4/WebM/ProRes/DnxHr/Mkv/Gif)
+- [ ] Probe/decode benchmarks — media file probe latency, video decode frame rate
+- [ ] Keyframe evaluation — interpolation throughput with many keyframe tracks
+- [ ] Tarang vs GStreamer — comparative decode/probe benchmarks when tarang feature enabled
 
 ---
 

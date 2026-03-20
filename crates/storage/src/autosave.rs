@@ -86,12 +86,12 @@ impl AutosaveManager {
 
     /// Stop the autosave loop.
     pub fn stop(&mut self) {
-        if let Some(tx) = self.stop_tx.take() {
-            if tx.send(true).is_err() {
-                tracing::warn!(
-                    "autosave stop signal could not be sent — background task may have already exited"
-                );
-            }
+        if let Some(tx) = self.stop_tx.take()
+            && tx.send(true).is_err()
+        {
+            tracing::warn!(
+                "autosave stop signal could not be sent — background task may have already exited"
+            );
         }
         if let Some(handle) = self.task.take() {
             handle.abort();

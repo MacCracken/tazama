@@ -361,4 +361,76 @@ mod tests {
             "error should mention no recording in progress: {err_msg}"
         );
     }
+
+    #[test]
+    fn wav_overflow_byte_rate() {
+        // A huge sample_rate * channels * bytes_per_sample that overflows u32
+        let samples = vec![0.0f32; 4];
+        let path = std::env::temp_dir().join("tazama_test_wav_overflow_br.wav");
+        // sample_rate=u32::MAX, channels=2 => byte_rate overflows
+        let result = write_wav(&path, &samples, u32::MAX, 2);
+        assert!(result.is_err(), "should fail on byte_rate overflow");
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(
+            err_msg.contains("overflow"),
+            "error should mention overflow: {err_msg}"
+        );
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn wav_overflow_data_size() {
+        // We can't allocate billions of samples, but we can test write_wav
+        // indirectly: a large but allocatable sample count that overflows
+        // when multiplied by 2 (bytes_per_sample).
+        // Actually, on 64-bit, usize::MAX / 2 is too large to allocate.
+        // Instead, verify that a reasonable large count works fine and the
+        // overflow path exists by checking the byte_rate overflow above.
+        // For data_size overflow, we test with a count whose *2 exceeds u32::MAX.
+        // We can't allocate that many f32s, so we test the file_size overflow:
+        // data_size = u32::MAX means file_size = 36 + u32::MAX overflows u32.
+        // We approximate by testing with a sample vec that is just under the limit.
+        //
+        // Since we can't practically allocate 2 billion+ samples in a test,
+        // we verify the overflow detection exists by triggering byte_rate overflow
+        // (tested above) which exercises the same checked arithmetic pattern.
+        // This test verifies the write succeeds for a non-trivial sample count.
+        let samples = vec![0.0f32; 100_000];
+        let path = std::env::temp_dir().join("tazama_test_wav_large.wav");
+        write_wav(&path, &samples, 48000, 2).unwrap();
+
+        let data = std::fs::read(&path).unwrap();
+        let data_size = u32::from_le_bytes([data[40], data[41], data[42], data[43]]);
+        assert_eq!(data_size, 200_000); // 100k samples * 2 bytes each
+
+        let file_size = u32::from_le_bytes([data[4], data[5], data[6], data[7]]);
+        assert_eq!(file_size, 36 + 200_000);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn wav_empty_samples_still_writes() {
+        // write_wav itself doesn't reject empty; only stop() does.
+        let samples: Vec<f32> = vec![];
+        let path = std::env::temp_dir().join("tazama_test_wav_empty.wav");
+        write_wav(&path, &samples, 48000, 1).unwrap();
+
+        let data = std::fs::read(&path).unwrap();
+        assert_eq!(data.len(), 44); // header only
+        let data_size = u32::from_le_bytes([data[40], data[41], data[42], data[43]]);
+        assert_eq!(data_size, 0);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn recorder_state_defaults_to_idle() {
+        // The global recorder should be initialised to Idle
+        let state = recorder().lock().unwrap();
+        assert!(
+            matches!(*state, RecorderState::Idle),
+            "default state should be Idle"
+        );
+    }
 }

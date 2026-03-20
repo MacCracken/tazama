@@ -225,3 +225,119 @@ fn find_video_stream(info: &tarang::core::MediaInfo) -> Option<(usize, tarang::c
     }
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[tokio::test]
+    async fn generate_thumbnails_nonexistent_file_returns_error() {
+        crate::init().ok();
+        let spec = ThumbnailSpec {
+            width: 160,
+            height: 90,
+            interval_ms: 1000,
+        };
+        let path = PathBuf::from("/tmp/nonexistent_video_tazama_test.mp4");
+        let result = generate_thumbnails(&path, spec).await;
+        assert!(result.is_err(), "expected error for nonexistent file");
+    }
+
+    #[test]
+    fn thumbnail_spec_construction() {
+        let spec = ThumbnailSpec {
+            width: 320,
+            height: 180,
+            interval_ms: 500,
+        };
+        assert_eq!(spec.width, 320);
+        assert_eq!(spec.height, 180);
+        assert_eq!(spec.interval_ms, 500);
+    }
+
+    #[test]
+    fn thumbnail_spec_zero_interval() {
+        let spec = ThumbnailSpec {
+            width: 160,
+            height: 90,
+            interval_ms: 0,
+        };
+        assert_eq!(spec.interval_ms, 0);
+    }
+
+    #[test]
+    fn thumbnail_spec_clone_and_copy() {
+        let spec = ThumbnailSpec {
+            width: 640,
+            height: 360,
+            interval_ms: 2000,
+        };
+        let copied = spec;
+        let cloned = spec;
+        assert_eq!(copied.width, cloned.width);
+        assert_eq!(copied.height, cloned.height);
+        assert_eq!(copied.interval_ms, cloned.interval_ms);
+    }
+
+    #[test]
+    fn thumbnail_spec_debug_format() {
+        let spec = ThumbnailSpec {
+            width: 100,
+            height: 50,
+            interval_ms: 1000,
+        };
+        let debug = format!("{:?}", spec);
+        assert!(debug.contains("100"));
+        assert!(debug.contains("50"));
+        assert!(debug.contains("1000"));
+    }
+
+    #[cfg(feature = "tarang")]
+    mod tarang_tests {
+        use super::*;
+
+        #[test]
+        fn is_tarang_video_mp4() {
+            assert!(is_tarang_video(Path::new("test.mp4")));
+        }
+
+        #[test]
+        fn is_tarang_video_mkv() {
+            assert!(is_tarang_video(Path::new("test.mkv")));
+        }
+
+        #[test]
+        fn is_tarang_video_webm() {
+            assert!(is_tarang_video(Path::new("test.webm")));
+        }
+
+        #[test]
+        fn is_tarang_video_m4v() {
+            assert!(is_tarang_video(Path::new("video.m4v")));
+        }
+
+        #[test]
+        fn is_tarang_video_case_insensitive() {
+            assert!(is_tarang_video(Path::new("test.MP4")));
+            assert!(is_tarang_video(Path::new("test.MKV")));
+        }
+
+        #[test]
+        fn is_tarang_video_unsupported_extension() {
+            assert!(!is_tarang_video(Path::new("test.avi")));
+            assert!(!is_tarang_video(Path::new("test.mov")));
+        }
+
+        #[test]
+        fn is_tarang_video_no_extension() {
+            assert!(!is_tarang_video(Path::new("videofile")));
+        }
+
+        #[test]
+        fn create_demuxer_nonexistent_file_returns_error() {
+            let result = create_demuxer(Path::new("/tmp/nonexistent_tazama_test.mp4"));
+            assert!(result.is_err());
+        }
+    }
+}

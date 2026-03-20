@@ -847,6 +847,130 @@ mod tests {
         assert!(timeline.multicam_groups.is_empty());
     }
 
+    // --- Clip overlap edge cases ---
+
+    #[test]
+    fn overlap_detection_rejects_clip_fully_inside_existing() {
+        let mut track = Track::new("V1", TrackKind::Video);
+        track.add_clip(make_clip(0, 100)).unwrap();
+        // Clip entirely inside existing clip
+        let result = track.add_clip(make_clip(10, 20));
+        assert!(matches!(result, Err(TimelineError::ClipOverlap(_))));
+    }
+
+    #[test]
+    fn overlap_detection_rejects_clip_enclosing_existing() {
+        let mut track = Track::new("V1", TrackKind::Video);
+        track.add_clip(make_clip(20, 30)).unwrap();
+        // Clip that fully encloses existing clip
+        let result = track.add_clip(make_clip(10, 50));
+        assert!(matches!(result, Err(TimelineError::ClipOverlap(_))));
+    }
+
+    #[test]
+    fn adjacent_clips_no_gap_no_overlap() {
+        let mut track = Track::new("V1", TrackKind::Video);
+        track.add_clip(make_clip(0, 30)).unwrap();
+        track.add_clip(make_clip(30, 30)).unwrap();
+        track.add_clip(make_clip(60, 30)).unwrap();
+        assert_eq!(track.clips.len(), 3);
+        // Verify they are in order and exactly adjacent
+        assert_eq!(track.clips[0].timeline_end(), track.clips[1].timeline_start);
+        assert_eq!(track.clips[1].timeline_end(), track.clips[2].timeline_start);
+    }
+
+    #[test]
+    fn clip_at_exact_boundary_one_frame_overlap() {
+        let mut track = Track::new("V1", TrackKind::Video);
+        track.add_clip(make_clip(0, 30)).unwrap();
+        // Starts one frame before the end of the first clip — overlap
+        let result = track.add_clip(make_clip(29, 30));
+        assert!(matches!(result, Err(TimelineError::ClipOverlap(_))));
+    }
+
+    #[test]
+    fn zero_duration_clip_no_overlap() {
+        let mut track = Track::new("V1", TrackKind::Video);
+        track.add_clip(make_clip(0, 30)).unwrap();
+        // A zero-duration clip starts at frame 30 (end of existing), end = 30
+        // check_overlap: start(30) < c_end(30) is false, so no overlap
+        let zero_clip = make_clip(30, 0);
+        track.add_clip(zero_clip).unwrap();
+        assert_eq!(track.clips.len(), 2);
+    }
+
+    #[test]
+    fn zero_duration_clip_at_same_start_no_overlap() {
+        let mut track = Track::new("V1", TrackKind::Video);
+        track.add_clip(make_clip(10, 50)).unwrap();
+        // Zero-duration clip at frame 10: end = 10
+        // check_overlap: start(10) < c_end(60) is true, end(10) > c.timeline_start(10) is false
+        let zero = make_clip(10, 0);
+        track.add_clip(zero).unwrap();
+        assert_eq!(track.clips.len(), 2);
+    }
+
+    #[test]
+    fn move_clip_creates_overlap_rejected() {
+        let mut track = Track::new("V1", TrackKind::Video);
+        let clip_a = make_clip(0, 30);
+        let clip_b = make_clip(50, 30);
+        let b_id = clip_b.id;
+        track.add_clip(clip_a).unwrap();
+        track.add_clip(clip_b).unwrap();
+
+        // Move B to overlap with A
+        let result = track.move_clip(b_id, 10);
+        assert!(matches!(result, Err(TimelineError::ClipOverlap(_))));
+        // B should remain at original position
+        let b = track.clips.iter().find(|c| c.id == b_id).unwrap();
+        assert_eq!(b.timeline_start, 50);
+    }
+
+    #[test]
+    fn move_clip_resolves_overlap_succeeds() {
+        let mut track = Track::new("V1", TrackKind::Video);
+        let clip_a = make_clip(0, 30);
+        let clip_b = make_clip(30, 30);
+        let b_id = clip_b.id;
+        track.add_clip(clip_a).unwrap();
+        track.add_clip(clip_b).unwrap();
+
+        // Move B further away — no overlap
+        track.move_clip(b_id, 100).unwrap();
+        let b = track.clips.iter().find(|c| c.id == b_id).unwrap();
+        assert_eq!(b.timeline_start, 100);
+    }
+
+    // --- Empty timeline edge cases ---
+
+    #[test]
+    fn duration_frames_empty_timeline_returns_zero() {
+        let timeline = Timeline::new();
+        assert_eq!(timeline.duration_frames(), 0);
+    }
+
+    #[test]
+    fn duration_frames_timeline_with_empty_tracks() {
+        let mut timeline = Timeline::new();
+        timeline.add_track(Track::new("V1", TrackKind::Video));
+        timeline.add_track(Track::new("A1", TrackKind::Audio));
+        // Tracks present but no clips
+        assert_eq!(timeline.duration_frames(), 0);
+    }
+
+    #[test]
+    fn audible_tracks_empty_timeline() {
+        let timeline = Timeline::new();
+        assert!(timeline.audible_tracks().is_empty());
+    }
+
+    #[test]
+    fn visible_video_tracks_empty_timeline() {
+        let timeline = Timeline::new();
+        assert!(timeline.visible_video_tracks().is_empty());
+    }
+
     #[test]
     fn timeline_serde_backward_compat_without_volume_pan_multicam() {
         // Simulate old JSON format without volume, pan, or multicam_groups fields

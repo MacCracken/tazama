@@ -1078,4 +1078,283 @@ mod tests {
         assert!((mix[2] - 0.7).abs() < 1e-6);
         assert!((mix[3] - 0.7).abs() < 1e-6);
     }
+
+    // --- DSP integration tests ---
+
+    #[test]
+    fn test_apply_clip_effects_empty_effects_is_noop() {
+        let mut samples: Vec<f32> = (0..4096)
+            .map(|i| (2.0 * std::f64::consts::PI * 440.0 * i as f64 / 96000.0).sin() as f32 * 0.5)
+            .collect();
+        let original = samples.clone();
+
+        apply_clip_effects(&mut samples, &[], 48000, 2, 30, 30.0);
+
+        assert_eq!(
+            samples, original,
+            "empty effects list should not modify samples"
+        );
+    }
+
+    #[test]
+    fn test_apply_clip_effects_multiple_disabled_skipped() {
+        // Multiple effects, all disabled — samples should be unchanged
+        let mut samples: Vec<f32> = (0..4096)
+            .map(|i| (2.0 * std::f64::consts::PI * 440.0 * i as f64 / 96000.0).sin() as f32 * 0.5)
+            .collect();
+        let original = samples.clone();
+
+        let mut eq = tazama_core::Effect::new(EffectKind::Eq {
+            low_gain_db: 12.0,
+            mid_gain_db: 6.0,
+            high_gain_db: 12.0,
+        });
+        eq.enabled = false;
+
+        let mut comp = tazama_core::Effect::new(EffectKind::Compressor {
+            threshold_db: -10.0,
+            ratio: 8.0,
+            attack_ms: 1.0,
+            release_ms: 50.0,
+        });
+        comp.enabled = false;
+
+        let mut vol = tazama_core::Effect::new(EffectKind::Volume { gain_db: -20.0 });
+        vol.enabled = false;
+
+        apply_clip_effects(&mut samples, &[eq, comp, vol], 48000, 2, 30, 30.0);
+        assert_eq!(
+            samples, original,
+            "all disabled effects should leave samples untouched"
+        );
+    }
+
+    #[test]
+    fn test_apply_eq_then_compressor_sequence() {
+        // Generate a 440Hz tone, stereo, 4096 interleaved samples
+        let mut samples: Vec<f32> = (0..4096)
+            .map(|i| {
+                let t = (i / 2) as f64 / 48000.0; // stereo: 2 samples per frame
+                (2.0 * std::f64::consts::PI * 440.0 * t).sin() as f32 * 0.8
+            })
+            .collect();
+        let before = samples.clone();
+
+        let effects = vec![
+            tazama_core::Effect::new(EffectKind::Eq {
+                low_gain_db: 6.0,
+                mid_gain_db: 0.0,
+                high_gain_db: -3.0,
+            }),
+            tazama_core::Effect::new(EffectKind::Compressor {
+                threshold_db: -20.0,
+                ratio: 4.0,
+                attack_ms: 10.0,
+                release_ms: 100.0,
+            }),
+        ];
+
+        apply_clip_effects(&mut samples, &effects, 48000, 2, 30, 30.0);
+
+        // The signal should be modified by both EQ and compressor
+        assert_ne!(samples, before, "EQ + compressor should modify the signal");
+    }
+
+    #[test]
+    fn test_apply_eq_then_compressor_then_volume() {
+        // Three effects in sequence: EQ -> Compressor -> Volume
+        let mut samples: Vec<f32> = (0..4096)
+            .map(|i| {
+                let t = (i / 2) as f64 / 48000.0;
+                (2.0 * std::f64::consts::PI * 440.0 * t).sin() as f32 * 0.5
+            })
+            .collect();
+
+        let effects = vec![
+            tazama_core::Effect::new(EffectKind::Eq {
+                low_gain_db: 3.0,
+                mid_gain_db: 0.0,
+                high_gain_db: 0.0,
+            }),
+            tazama_core::Effect::new(EffectKind::Compressor {
+                threshold_db: -15.0,
+                ratio: 2.0,
+                attack_ms: 5.0,
+                release_ms: 50.0,
+            }),
+            tazama_core::Effect::new(EffectKind::Volume { gain_db: -6.0 }),
+        ];
+
+        apply_clip_effects(&mut samples, &effects, 48000, 2, 30, 30.0);
+
+        // After -6dB volume, peak should be significantly less than 0.5
+        let peak = samples.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
+        assert!(
+            peak < 0.5,
+            "after -6dB volume on a 0.5 amplitude signal, peak should be < 0.5, got {peak}"
+        );
+    }
+
+    #[test]
+    fn test_mixed_enabled_disabled_effects() {
+        // First effect enabled (EQ boost), second disabled (compressor), third enabled (volume cut)
+        let mut samples = vec![0.5f32; 200];
+
+        let eq = tazama_core::Effect::new(EffectKind::Eq {
+            low_gain_db: 0.0,
+            mid_gain_db: 0.0,
+            high_gain_db: 0.0,
+        });
+
+        let mut comp = tazama_core::Effect::new(EffectKind::Compressor {
+            threshold_db: -10.0,
+            ratio: 8.0,
+            attack_ms: 1.0,
+            release_ms: 50.0,
+        });
+        comp.enabled = false;
+
+        let vol = tazama_core::Effect::new(EffectKind::Volume { gain_db: -6.0 });
+
+        apply_clip_effects(&mut samples, &[eq, comp, vol], 48000, 1, 30, 30.0);
+
+        // Volume -6dB ≈ 0.501 gain, so 0.5 * 0.501 ≈ 0.25
+        let expected = 0.5 * 10.0f32.powf(-6.0 / 20.0);
+        assert!(
+            (samples[100] - expected).abs() < 1e-3,
+            "expected ~{expected}, got {}",
+            samples[100]
+        );
+    }
+
+    #[test]
+    fn test_volume_effect_with_keyframes() {
+        // Volume effect with keyframes: ramp from 0dB at frame 0 to -20dB at frame 30
+        // 48000 mono samples = 1 second at 48kHz
+        let mut samples = vec![1.0f32; 48000];
+
+        let mut effect = tazama_core::Effect::new(EffectKind::Volume { gain_db: 0.0 });
+        let mut track = tazama_core::keyframe::KeyframeTrack::new("gain_db");
+        track.add_keyframe(tazama_core::keyframe::Keyframe::new(
+            0,
+            0.0,
+            tazama_core::keyframe::Interpolation::Linear,
+        ));
+        track.add_keyframe(tazama_core::keyframe::Keyframe::new(
+            30,
+            -20.0,
+            tazama_core::keyframe::Interpolation::Linear,
+        ));
+        effect.keyframe_tracks.push(track);
+
+        apply_clip_effects(&mut samples, &[effect], 48000, 1, 30, 30.0);
+
+        // At frame 0 (sample 0), gain_db=0 => multiplier=1.0
+        assert!(
+            (samples[0] - 1.0).abs() < 0.01,
+            "at start, gain should be ~1.0, got {}",
+            samples[0]
+        );
+
+        // At frame 30 (sample 47999, end of 1 second), gain_db=-20 => multiplier=0.1
+        let end_expected = 10.0f32.powf(-20.0 / 20.0); // 0.1
+        assert!(
+            (samples[47999] - end_expected).abs() < 0.05,
+            "at end, gain should be ~{end_expected}, got {}",
+            samples[47999]
+        );
+
+        // Midpoint (frame 15, sample ~24000): gain_db=-10 => multiplier ≈ 0.316
+        let mid_expected = 10.0f32.powf(-10.0 / 20.0);
+        assert!(
+            (samples[24000] - mid_expected).abs() < 0.05,
+            "at midpoint, gain should be ~{mid_expected}, got {}",
+            samples[24000]
+        );
+    }
+
+    #[test]
+    fn test_volume_effect_keyframes_no_keyframes_uses_static() {
+        // Volume effect with empty keyframe_tracks should use the static gain_db
+        let mut samples = vec![0.5f32; 100];
+        let effect = tazama_core::Effect::new(EffectKind::Volume { gain_db: -6.0 });
+        // keyframe_tracks is empty by default
+        assert!(effect.keyframe_tracks.is_empty());
+
+        apply_clip_effects(&mut samples, &[effect], 48000, 1, 30, 30.0);
+
+        let expected = 0.5 * 10.0f32.powf(-6.0 / 20.0);
+        assert!(
+            (samples[50] - expected).abs() < 1e-4,
+            "static volume should apply, expected {expected}, got {}",
+            samples[50]
+        );
+    }
+
+    #[test]
+    fn test_noise_reduction_effect_applied() {
+        let mut samples: Vec<f32> = (0..4096)
+            .map(|i| {
+                let t = (i / 2) as f64 / 48000.0;
+                (2.0 * std::f64::consts::PI * 440.0 * t).sin() as f32 * 0.3
+            })
+            .collect();
+        let before = samples.clone();
+
+        let effects = vec![tazama_core::Effect::new(EffectKind::NoiseReduction {
+            strength: 0.5,
+        })];
+
+        apply_clip_effects(&mut samples, &effects, 48000, 2, 30, 30.0);
+        // Noise reduction should modify the signal (at least some samples differ)
+        let any_different = samples
+            .iter()
+            .zip(before.iter())
+            .any(|(a, b)| (a - b).abs() > 1e-10);
+        assert!(any_different, "noise reduction should modify the signal");
+    }
+
+    #[test]
+    fn test_reverb_effect_applied() {
+        let mut samples: Vec<f32> = (0..8192)
+            .map(|i| {
+                let t = (i / 2) as f64 / 48000.0;
+                (2.0 * std::f64::consts::PI * 440.0 * t).sin() as f32 * 0.3
+            })
+            .collect();
+        let before = samples.clone();
+
+        let effects = vec![tazama_core::Effect::new(EffectKind::Reverb {
+            room_size: 0.5,
+            damping: 0.5,
+            wet: 0.3,
+        })];
+
+        apply_clip_effects(&mut samples, &effects, 48000, 2, 30, 30.0);
+        let any_different = samples
+            .iter()
+            .zip(before.iter())
+            .any(|(a, b)| (a - b).abs() > 1e-10);
+        assert!(any_different, "reverb should modify the signal");
+    }
+
+    #[test]
+    fn test_video_effect_ignored_in_audio_chain() {
+        // A video-only effect like ColorGrade should be a no-op in the audio chain
+        let mut samples = vec![0.5f32; 200];
+        let original = samples.clone();
+
+        let effects = vec![tazama_core::Effect::new(EffectKind::ColorGrade {
+            brightness: 0.5,
+            contrast: 1.5,
+            saturation: 0.8,
+            temperature: 0.2,
+        })];
+
+        apply_clip_effects(&mut samples, &effects, 48000, 1, 30, 30.0);
+        assert_eq!(
+            samples, original,
+            "video effects should not modify audio samples"
+        );
+    }
 }

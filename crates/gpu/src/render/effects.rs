@@ -14,10 +14,10 @@ use super::Renderer;
 /// Resolve a keyframed parameter: evaluate at the current frame and override the static value.
 pub(crate) fn resolve_param(effect: &Effect, frame_index: u64, name: &str, static_val: f32) -> f32 {
     for kt in &effect.keyframe_tracks {
-        if kt.parameter == name {
-            if let Some(v) = keyframe::evaluate(kt, frame_index) {
-                return v;
-            }
+        if kt.parameter == name
+            && let Some(v) = keyframe::evaluate(kt, frame_index)
+        {
+            return v;
         }
     }
     static_val

@@ -230,7 +230,7 @@ impl Drop for Renderer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use collect::*;
+    use collect::{collect_active_clips, frame_index_to_ns};
     use tazama_core::*;
 
     fn test_timeline() -> Timeline {

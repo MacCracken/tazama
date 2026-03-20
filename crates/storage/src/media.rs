@@ -128,4 +128,69 @@ mod tests {
             PathBuf::from("/project/media/image.png")
         );
     }
+
+    #[tokio::test]
+    async fn import_nonexistent_source_returns_not_found() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = MediaStore::new(dir.path());
+        let bogus = dir.path().join("does_not_exist.mp4");
+        let result = store.import(&bogus).await;
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            MediaError::NotFound(p) => assert_eq!(p, bogus),
+            other => panic!("expected NotFound, got: {other}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn import_creates_media_subdirectory() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = MediaStore::new(dir.path());
+
+        // media/ subdir should not exist yet
+        let media_dir = dir.path().join("media");
+        assert!(!media_dir.exists());
+
+        // Create source file
+        let source = dir.path().join("clip.mp4");
+        tokio::fs::write(&source, b"test data").await.unwrap();
+
+        let dest = store.import(&source).await.unwrap();
+        assert!(media_dir.exists(), "import should create media/ subdir");
+        assert!(dest.exists());
+
+        let contents = tokio::fs::read(&dest).await.unwrap();
+        assert_eq!(contents, b"test data");
+    }
+
+    #[tokio::test]
+    async fn import_preserves_file_contents() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = MediaStore::new(dir.path());
+
+        let payload = b"binary\x00payload\xFFwith\x01all\x02bytes";
+        let source = dir.path().join("binary.dat");
+        tokio::fs::write(&source, payload).await.unwrap();
+
+        let dest = store.import(&source).await.unwrap();
+        let read_back = tokio::fs::read(&dest).await.unwrap();
+        assert_eq!(read_back, payload);
+    }
+
+    #[tokio::test]
+    async fn import_overwrites_existing_destination() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = MediaStore::new(dir.path());
+
+        let source = dir.path().join("dup.mp4");
+        tokio::fs::write(&source, b"version1").await.unwrap();
+        store.import(&source).await.unwrap();
+
+        // Overwrite source and re-import
+        tokio::fs::write(&source, b"version2").await.unwrap();
+        let dest = store.import(&source).await.unwrap();
+
+        let contents = tokio::fs::read(&dest).await.unwrap();
+        assert_eq!(contents, b"version2");
+    }
 }

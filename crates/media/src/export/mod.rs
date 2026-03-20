@@ -29,9 +29,10 @@ pub enum ExportAudioCodec {
 }
 
 /// Encoder selection for export.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub enum ExportEncoder {
     /// Current behavior: try hw, fall back to sw
+    #[default]
     Auto,
     /// Force software encoding
     Software,
@@ -41,12 +42,6 @@ pub enum ExportEncoder {
     Nvenc,
     /// Use tarang encoder when available
     Tarang,
-}
-
-impl Default for ExportEncoder {
-    fn default() -> Self {
-        Self::Auto
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

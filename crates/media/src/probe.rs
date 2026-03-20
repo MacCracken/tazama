@@ -499,4 +499,245 @@ mod tests {
             MediaPipelineError::FileNotFound(_)
         ));
     }
+
+    #[test]
+    fn probe_nonexistent_preserves_path() {
+        let path = "/tmp/does_not_exist_12345.mp4";
+        let result = probe_sync(Path::new(path));
+        match result {
+            Err(MediaPipelineError::FileNotFound(p)) => {
+                assert!(
+                    p.contains("does_not_exist_12345"),
+                    "path should be preserved in error, got: {p}"
+                );
+            }
+            other => panic!("expected FileNotFound, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn probe_empty_file_returns_error() {
+        gstreamer::init().unwrap();
+        let dir = std::env::temp_dir().join("tazama_test_probe_empty");
+        std::fs::create_dir_all(&dir).unwrap();
+        // Use a non-audio, non-video extension so tarang doesn't intercept
+        let empty_file = dir.join("empty.mxf");
+        std::fs::write(&empty_file, b"").unwrap();
+
+        let result = probe_sync(&empty_file);
+        // An empty file cannot be probed — GStreamer should return ProbeFailed
+        assert!(result.is_err(), "probing an empty file should fail");
+        match &result.unwrap_err() {
+            MediaPipelineError::ProbeFailed { path, .. } => {
+                assert!(path.contains("empty.mxf"));
+            }
+            other => {
+                // Some GStreamer versions may return a different error variant;
+                // the important thing is it does not succeed.
+                eprintln!("got error variant: {other}");
+            }
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn probe_sync_nonexistent_returns_file_not_found() {
+        let result = probe_sync(Path::new("/no/such/path/video.mkv"));
+        assert!(matches!(result, Err(MediaPipelineError::FileNotFound(_))));
+    }
+
+    #[test]
+    fn detect_container_all_supported_formats() {
+        // Exhaustive check of every supported extension
+        let cases = [
+            ("video.mp4", ContainerFormat::Mp4),
+            ("video.m4v", ContainerFormat::Mp4),
+            ("video.mkv", ContainerFormat::Mkv),
+            ("video.webm", ContainerFormat::WebM),
+            ("video.mov", ContainerFormat::Mov),
+            ("video.avi", ContainerFormat::Avi),
+        ];
+        for (filename, expected) in &cases {
+            assert_eq!(
+                detect_container(Path::new(filename)),
+                *expected,
+                "failed for {filename}"
+            );
+        }
+    }
+
+    #[test]
+    fn detect_container_unknown_extensions() {
+        let unknown = [
+            "video.flv",
+            "video.ts",
+            "video.wmv",
+            "video.3gp",
+            "noext",
+            "file.",
+            "video.MP3",
+        ];
+        for filename in &unknown {
+            assert_eq!(
+                detect_container(Path::new(filename)),
+                ContainerFormat::Other,
+                "expected Other for {filename}"
+            );
+        }
+    }
+
+    #[test]
+    fn detect_container_preserves_case_insensitivity() {
+        let cases = [
+            ("VIDEO.MP4", ContainerFormat::Mp4),
+            ("clip.M4V", ContainerFormat::Mp4),
+            ("movie.MKV", ContainerFormat::Mkv),
+            ("stream.WEBM", ContainerFormat::WebM),
+            ("clip.MOV", ContainerFormat::Mov),
+            ("old.AVI", ContainerFormat::Avi),
+        ];
+        for (filename, expected) in &cases {
+            assert_eq!(
+                detect_container(Path::new(filename)),
+                *expected,
+                "case insensitivity failed for {filename}"
+            );
+        }
+    }
+
+    #[cfg(feature = "tarang")]
+    mod tarang_tests {
+        use super::*;
+
+        #[test]
+        fn map_video_codec_h264() {
+            assert_eq!(
+                map_tarang_video_codec(tarang::core::VideoCodec::H264),
+                Codec::H264
+            );
+        }
+
+        #[test]
+        fn map_video_codec_h265() {
+            assert_eq!(
+                map_tarang_video_codec(tarang::core::VideoCodec::H265),
+                Codec::H265
+            );
+        }
+
+        #[test]
+        fn map_video_codec_vp9() {
+            assert_eq!(
+                map_tarang_video_codec(tarang::core::VideoCodec::Vp9),
+                Codec::Vp9
+            );
+        }
+
+        #[test]
+        fn map_video_codec_av1() {
+            assert_eq!(
+                map_tarang_video_codec(tarang::core::VideoCodec::Av1),
+                Codec::Av1
+            );
+        }
+
+        #[test]
+        fn map_audio_codec_aac() {
+            assert_eq!(
+                map_tarang_audio_codec(tarang::core::AudioCodec::Aac),
+                Codec::Aac
+            );
+        }
+
+        #[test]
+        fn map_audio_codec_mp3() {
+            assert_eq!(
+                map_tarang_audio_codec(tarang::core::AudioCodec::Mp3),
+                Codec::Mp3
+            );
+        }
+
+        #[test]
+        fn map_audio_codec_flac() {
+            assert_eq!(
+                map_tarang_audio_codec(tarang::core::AudioCodec::Flac),
+                Codec::Flac
+            );
+        }
+
+        #[test]
+        fn map_audio_codec_opus() {
+            assert_eq!(
+                map_tarang_audio_codec(tarang::core::AudioCodec::Opus),
+                Codec::Opus
+            );
+        }
+
+        #[test]
+        fn is_audio_file_recognized() {
+            for ext in AUDIO_EXTENSIONS {
+                let path = format!("file.{ext}");
+                assert!(
+                    is_audio_file(Path::new(&path)),
+                    "should recognize .{ext} as audio"
+                );
+            }
+        }
+
+        #[test]
+        fn is_audio_file_rejects_video() {
+            assert!(!is_audio_file(Path::new("video.mp4")));
+            assert!(!is_audio_file(Path::new("video.mkv")));
+        }
+
+        #[test]
+        fn is_video_file_recognized() {
+            for ext in VIDEO_EXTENSIONS {
+                let path = format!("file.{ext}");
+                assert!(
+                    is_video_file(Path::new(&path)),
+                    "should recognize .{ext} as video"
+                );
+            }
+        }
+
+        #[test]
+        fn is_video_file_rejects_audio() {
+            assert!(!is_video_file(Path::new("audio.wav")));
+            assert!(!is_video_file(Path::new("audio.mp3")));
+        }
+
+        #[test]
+        fn f64_to_rational_common_rates() {
+            assert_eq!(f64_to_rational(23.976), (24000, 1001));
+            assert_eq!(f64_to_rational(24.0), (24, 1));
+            assert_eq!(f64_to_rational(25.0), (25, 1));
+            assert_eq!(f64_to_rational(29.97), (30000, 1001));
+            assert_eq!(f64_to_rational(30.0), (30, 1));
+            assert_eq!(f64_to_rational(50.0), (50, 1));
+            assert_eq!(f64_to_rational(59.94), (60000, 1001));
+            assert_eq!(f64_to_rational(60.0), (60, 1));
+        }
+
+        #[test]
+        fn f64_to_rational_zero() {
+            assert_eq!(f64_to_rational(0.0), (0, 1));
+        }
+
+        #[test]
+        fn f64_to_rational_negative() {
+            assert_eq!(f64_to_rational(-1.0), (0, 1));
+        }
+
+        #[test]
+        fn f64_to_rational_uncommon_rate() {
+            let (num, den) = f64_to_rational(15.0);
+            let actual_fps = num as f64 / den as f64;
+            assert!(
+                (actual_fps - 15.0).abs() < 0.01,
+                "15fps: got {num}/{den} = {actual_fps}"
+            );
+        }
+    }
 }

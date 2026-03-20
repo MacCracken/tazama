@@ -491,6 +491,166 @@ mod tests {
     }
 
     #[test]
+    fn bezier_cubic_very_large_tangents() {
+        let mut track = KeyframeTrack::new("test");
+        track.add_keyframe(Keyframe::new(
+            0,
+            0.0,
+            Interpolation::BezierCubic {
+                in_tangent: (0.0, 0.0),
+                out_tangent: (0.5, 1e6),
+            },
+        ));
+        track.add_keyframe(Keyframe::new(
+            100,
+            1.0,
+            Interpolation::BezierCubic {
+                in_tangent: (-0.5, -1e6),
+                out_tangent: (0.0, 0.0),
+            },
+        ));
+
+        // Endpoints remain exact
+        assert!((evaluate(&track, 0).unwrap() - 0.0).abs() < 1e-6);
+        assert!((evaluate(&track, 100).unwrap() - 1.0).abs() < 1e-6);
+
+        // Midpoint is finite despite extreme tangents
+        let mid = evaluate(&track, 50).unwrap();
+        assert!(mid.is_finite());
+    }
+
+    #[test]
+    fn bezier_cubic_very_small_tangents() {
+        let mut track = KeyframeTrack::new("test");
+        track.add_keyframe(Keyframe::new(
+            0,
+            0.0,
+            Interpolation::BezierCubic {
+                in_tangent: (0.0, 0.0),
+                out_tangent: (1e-9, 1e-9),
+            },
+        ));
+        track.add_keyframe(Keyframe::new(
+            100,
+            1.0,
+            Interpolation::BezierCubic {
+                in_tangent: (-1e-9, -1e-9),
+                out_tangent: (0.0, 0.0),
+            },
+        ));
+
+        let mid = evaluate(&track, 50).unwrap();
+        // Near-zero tangents should behave close to linear
+        assert!((mid - 0.5).abs() < 0.1, "near-zero tangent mid={mid}");
+    }
+
+    #[test]
+    fn bezier_cubic_negative_tangents() {
+        let mut track = KeyframeTrack::new("test");
+        track.add_keyframe(Keyframe::new(
+            0,
+            0.0,
+            Interpolation::BezierCubic {
+                in_tangent: (0.0, 0.0),
+                out_tangent: (-0.5, -2.0),
+            },
+        ));
+        track.add_keyframe(Keyframe::new(
+            100,
+            1.0,
+            Interpolation::BezierCubic {
+                in_tangent: (0.5, 2.0),
+                out_tangent: (0.0, 0.0),
+            },
+        ));
+
+        // Should produce finite values even with negative tangent directions
+        for f in [10, 25, 50, 75, 90] {
+            let v = evaluate(&track, f).unwrap();
+            assert!(v.is_finite(), "negative tangent at frame {f} not finite");
+        }
+    }
+
+    #[test]
+    fn bezier_cubic_overshoot_exceeds_endpoint_values() {
+        // Large tangents that cause clear value overshoot beyond [0, 1]
+        let mut track = KeyframeTrack::new("test");
+        track.add_keyframe(Keyframe::new(
+            0,
+            0.0,
+            Interpolation::BezierCubic {
+                in_tangent: (0.0, 0.0),
+                out_tangent: (0.33, 50.0), // P1 = 50.0, far above endpoint
+            },
+        ));
+        track.add_keyframe(Keyframe::new(
+            100,
+            1.0,
+            Interpolation::BezierCubic {
+                in_tangent: (-0.33, -50.0), // P2 = -49.0, far below start
+                out_tangent: (0.0, 0.0),
+            },
+        ));
+
+        // The curve should overshoot: some samples should exceed 1.0 or go below 0.0
+        let mut has_overshoot = false;
+        for f in 1..100 {
+            let v = evaluate(&track, f).unwrap();
+            assert!(v.is_finite());
+            if !(0.0..=1.0).contains(&v) {
+                has_overshoot = true;
+            }
+        }
+        assert!(
+            has_overshoot,
+            "expected bezier overshoot with extreme tangents"
+        );
+    }
+
+    #[test]
+    fn evaluate_same_frame_keyframes_returns_left_value() {
+        // Two keyframes at the exact same frame — the div-by-zero guard should return left.value
+        let mut track = KeyframeTrack::new("test");
+        track.add_keyframe(Keyframe::new(50, 3.0, Interpolation::Linear));
+        track.add_keyframe(Keyframe::new(50, 7.0, Interpolation::Linear));
+
+        // binary_search may find either, but the span==0 guard returns left.value
+        let v = evaluate(&track, 50).unwrap();
+        assert!(v.is_finite());
+        assert!(v == 3.0 || v == 7.0);
+    }
+
+    #[test]
+    fn integrated_speed_varying_three_keyframes() {
+        // Speed: 1.0 at frame 0, 3.0 at frame 5, 1.0 at frame 10
+        let track = linear_track(vec![(0, 1.0), (5, 3.0), (10, 1.0)]);
+        // Triangle speed curve: average speed = 2.0, over 10 frames = 20.0
+        let result = integrated_speed(&track, 0, 10);
+        assert!((result - 20.0).abs() < 0.5, "varying speed result={result}");
+    }
+
+    #[test]
+    fn integrated_speed_partial_range() {
+        // Speed ramp 1.0 -> 2.0 over frames 0..10, but only integrate frames 3..7
+        let track = linear_track(vec![(0, 1.0), (10, 2.0)]);
+        // At frame 3: speed=1.3, at frame 7: speed=1.7, average=1.5, 4 frames => 6.0
+        let result = integrated_speed(&track, 3, 7);
+        assert!((result - 6.0).abs() < 0.5, "partial range result={result}");
+    }
+
+    #[test]
+    fn evaluate_at_exactly_first_keyframe() {
+        let track = linear_track(vec![(10, 5.0), (20, 10.0), (30, 15.0)]);
+        assert_eq!(evaluate(&track, 10), Some(5.0));
+    }
+
+    #[test]
+    fn evaluate_at_exactly_last_keyframe() {
+        let track = linear_track(vec![(10, 5.0), (20, 10.0), (30, 15.0)]);
+        assert_eq!(evaluate(&track, 30), Some(15.0));
+    }
+
+    #[test]
     fn bezier_cubic_zero_tangents_behaves_like_linear() {
         let mut track = KeyframeTrack::new("test");
         track.add_keyframe(Keyframe::new(

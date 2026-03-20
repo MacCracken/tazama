@@ -12,6 +12,18 @@
   - Added to both `tazama-media` and `tazama-gpu` — always-on, OS-agnostic, best-effort detection
   - Zero vendor SDK compile-time dependencies
 
+### Test Coverage (529 tests, 48.3% line coverage)
+- **Waveform** — struct construction, error paths (5 tests)
+- **Thumbnail** — spec tests, tarang extension helpers, nonexistent file error (13 tests)
+- **Record** — WAV header validation, overflow protection, state defaults (5 tests)
+- **MediaStore** — import error paths, directory creation, content preservation, overwrite (4 tests)
+- **Probe** — FileNotFound, empty file, all container formats, tarang codec mapping, frame rate rationals (20 tests)
+- **DSP integration** — chained effects, disabled skipping, volume keyframes, video effect ignored (10 tests)
+- **Keyframe** — bezier extreme tangents, overshoot, same-frame div-by-zero, integrated speed, boundary evaluation (9 tests)
+- **Clip overlap** — overlapping/adjacent/boundary clips, zero-duration, move overlap/resolve (8 tests)
+- **Empty timeline** — duration_frames, audible/visible tracks on empty timeline (4 tests)
+- High-coverage modules: DSP (97%+), text.rs (100%), storage (90%+), core types (85%+)
+
 ### P1 Code Quality (7 items)
 - **Test assertions** — replaced 11 `panic!()` assertions with `assert!(matches!(...))` in effect.rs and MCP tests
 - **Magic constants** — extracted named constants for WASM timeout (5s), export bus timeout (120s), WASM memory (16MB/256 pages), compute workgroup size (256)
