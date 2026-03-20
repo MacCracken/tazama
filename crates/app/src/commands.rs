@@ -284,13 +284,30 @@ pub async fn measure_loudness(path: String) -> Result<f64, String> {
     tazama_media::init().map_err(|e| e.to_string())?;
 
     let path = std::path::PathBuf::from(path);
-    tokio::task::spawn_blocking(move || {
-        let audio_buf = tazama_media::decode::audio::AudioDecoder::decode_all(&path)
-            .map_err(|e| e.to_string())?;
-        Ok(tazama_media::loudness::measure_loudness(&audio_buf))
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    let mut rx = tazama_media::decode::audio::AudioDecoder::decode(&path)
+        .map_err(|e| e.to_string())?;
+
+    // Collect all decoded audio into one buffer
+    let mut all_samples = Vec::new();
+    let mut sample_rate = 48000;
+    let mut channels = 2u16;
+    while let Some(buf) = rx.recv().await {
+        sample_rate = buf.sample_rate;
+        channels = buf.channels;
+        all_samples.extend_from_slice(&buf.samples);
+    }
+
+    if all_samples.is_empty() {
+        return Err("no audio data found".into());
+    }
+
+    let combined = tazama_media::AudioBuffer {
+        sample_rate,
+        channels,
+        samples: all_samples,
+        timestamp_ns: 0,
+    };
+    Ok(tazama_media::loudness::measure_loudness(&combined))
 }
 
 #[tauri::command]

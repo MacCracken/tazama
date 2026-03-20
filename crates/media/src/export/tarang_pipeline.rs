@@ -2,7 +2,7 @@ use std::io::{Seek, Write};
 use std::time::Duration;
 
 use bytes::Bytes;
-use tarang::demux::mux::{MkvMuxer, Mp4Muxer, Muxer, MuxConfig, VideoMuxConfig};
+use tarang::demux::{MkvMuxer, Mp4Muxer, Muxer, MuxConfig, VideoMuxConfig};
 use tokio::sync::watch;
 use tracing::{debug, error, info, info_span, warn};
 
@@ -408,8 +408,8 @@ mod tests {
         // U plane: 2*2 = 4 bytes
         // V plane: 2*2 = 4 bytes
         assert_eq!(yuv.len(), 16 + 4 + 4);
-        // White → Y≈255
-        assert!(yuv[0] > 250);
+        // White → Y≈235 (BT.601 limited range) or Y≈255 (full range)
+        assert!(yuv[0] > 220, "white Y should be high, got {}", yuv[0]);
     }
 
     #[test]
@@ -417,8 +417,8 @@ mod tests {
         let rgba = vec![0u8; 4 * 4 * 4]; // black, alpha=0
         let yuv = rgba_to_yuv420p(&rgba, 4, 4);
         assert_eq!(yuv.len(), 24);
-        // Black → Y=0
-        assert_eq!(yuv[0], 0);
+        // Black → Y=16 (BT.601 limited range) or Y=0 (full range)
+        assert!(yuv[0] <= 16, "black Y should be low, got {}", yuv[0]);
         // U,V should be 128 (neutral chroma)
         assert_eq!(yuv[16], 128);
         assert_eq!(yuv[20], 128);

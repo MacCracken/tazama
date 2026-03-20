@@ -152,6 +152,7 @@ pub(crate) fn apply_effect(ectx: &EffectContext) -> Result<Option<GpuBuffer>, Gp
         | EffectKind::Compressor { .. }
         | EffectKind::NoiseReduction { .. }
         | EffectKind::Reverb { .. }
+        | EffectKind::LoudnessNormalize { .. }
         | EffectKind::Plugin { .. } => Ok(None),
         EffectKind::Lut { lut_path } => {
             // Parse the .cube LUT file
