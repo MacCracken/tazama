@@ -199,7 +199,6 @@ export interface ExportConfig {
   frame_rate: [number, number];
   sample_rate: number;
   channels: number;
-  hardware_accel: boolean;
 }
 
 export interface ExportProgress {
@@ -228,6 +227,14 @@ export interface PluginParamDef {
   default_value: number;
   min_value: number;
   max_value: number;
+}
+
+// Hardware detection types
+export interface HardwareInfo {
+  name: string;
+  family: string;
+  memory_bytes: number;
+  available: boolean;
 }
 
 // UI-specific types

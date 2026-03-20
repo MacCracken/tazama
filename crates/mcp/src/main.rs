@@ -247,6 +247,14 @@ async fn handle_request(request: &Value, state: &mut ServerState) -> Value {
                             },
                             "required": ["clip_id", "frame_number", "output_path"]
                         }
+                    },
+                    {
+                        "name": "tazama_detect_hardware",
+                        "description": "Detect available hardware accelerators and encoding backends on the system",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {},
+                        }
                     }
                 ]
             }
@@ -277,6 +285,7 @@ async fn handle_tool_call(id: &Value, tool: &str, args: &Value, state: &mut Serv
         "tazama_export" => handle_export(id, args, state).await,
         "tazama_add_marker" => handle_add_marker(id, args, state),
         "tazama_extract_frame" => handle_extract_frame(id, args, state).await,
+        "tazama_detect_hardware" => handle_detect_hardware(id),
         _ => mcp_error(id, format!("Unknown tool: {tool}")),
     }
 }
@@ -518,7 +527,6 @@ async fn handle_export(id: &Value, args: &Value, state: &ServerState) -> Value {
         sample_rate: project.settings.sample_rate,
         channels: project.settings.channels,
         audio_codec: None,
-        hardware_accel: false,
         encoder: tazama_media::ExportEncoder::default(),
     };
 
@@ -687,6 +695,20 @@ async fn handle_extract_frame(id: &Value, args: &Value, state: &ServerState) -> 
         "width": frame.width,
         "height": frame.height,
         "frame_number": frame_number,
+    });
+    mcp_success(
+        id,
+        serde_json::to_string_pretty(&result).unwrap_or_default(),
+    )
+}
+
+fn handle_detect_hardware(id: &Value) -> Value {
+    let hardware = tazama_media::hwaccel::hardware_summary();
+    let encoders = tazama_media::available_encoders();
+
+    let result = json!({
+        "accelerators": hardware,
+        "available_encoders": encoders,
     });
     mcp_success(
         id,
@@ -1012,7 +1034,7 @@ mod tests {
         });
         let response = handle_request(&request, &mut state).await;
         let tools = response["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 7);
+        assert_eq!(tools.len(), 8);
     }
 
     #[tokio::test]

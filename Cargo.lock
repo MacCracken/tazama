@@ -6992,6 +6992,8 @@ dependencies = [
  "bytes",
  "cosmic-text",
  "gpu-allocator",
+ "serde",
+ "serde_json",
  "tazama-core",
  "thiserror 2.0.18",
  "tokio",

@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Project, MediaInfo, ExportConfig } from "../types";
+import type { Project, MediaInfo, ExportConfig, HardwareInfo, ExportEncoder } from "../types";
 
 export async function newProject(
   name: string,
@@ -110,4 +110,12 @@ export async function generateProxies(
 
 export async function setProxyMode(enabled: boolean): Promise<void> {
   return invoke<void>("set_proxy_mode", { enabled });
+}
+
+// Hardware detection
+export async function detectHardware(): Promise<{
+  accelerators: HardwareInfo[];
+  available_encoders: ExportEncoder[];
+}> {
+  return invoke("detect_hardware");
 }

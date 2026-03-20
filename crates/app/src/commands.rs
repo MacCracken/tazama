@@ -279,6 +279,18 @@ pub async fn set_proxy_mode(_enabled: bool) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+pub async fn detect_hardware() -> Result<serde_json::Value, String> {
+    let hardware = tazama_media::hwaccel::hardware_summary();
+    let encoders = tazama_media::available_encoders();
+
+    serde_json::to_value(serde_json::json!({
+        "accelerators": hardware,
+        "available_encoders": encoders,
+    }))
+    .map_err(|e| e.to_string())
+}
+
 /// Response for a rendered preview frame.
 #[derive(Serialize)]
 pub struct PreviewFrame {

@@ -2,6 +2,7 @@ pub mod decode;
 pub mod dsp;
 pub mod error;
 pub mod export;
+pub mod hwaccel;
 pub mod mix;
 pub mod playback;
 pub mod probe;

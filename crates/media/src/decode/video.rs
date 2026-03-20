@@ -334,8 +334,7 @@ fn decode_tarang_video(
         // Drain all available frames from the decoder
         while let Ok(tarang_frame) = decoder.receive_frame() {
             if frame_index >= range.start {
-                let frame =
-                    crate::convert::tarang_frame_to_tazama(&tarang_frame, frame_index)?;
+                let frame = crate::convert::tarang_frame_to_tazama(&tarang_frame, frame_index)?;
                 if tx.blocking_send(frame).is_err() {
                     debug!("tarang video decode receiver dropped");
                     return Ok(());
@@ -352,8 +351,7 @@ fn decode_tarang_video(
     if let Ok(()) = decoder.flush() {
         while let Ok(tarang_frame) = decoder.receive_frame() {
             if frame_index >= range.start && frame_index <= range.end {
-                let frame =
-                    crate::convert::tarang_frame_to_tazama(&tarang_frame, frame_index)?;
+                let frame = crate::convert::tarang_frame_to_tazama(&tarang_frame, frame_index)?;
                 if tx.blocking_send(frame).is_err() {
                     break;
                 }

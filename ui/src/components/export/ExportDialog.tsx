@@ -36,7 +36,6 @@ export function ExportDialog() {
         ],
         sample_rate: project.settings.sample_rate,
         channels: project.settings.channels,
-        hardware_accel: false,
       };
 
       setExporting(true);

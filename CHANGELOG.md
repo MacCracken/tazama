@@ -12,6 +12,16 @@
   - Added to both `tazama-media` and `tazama-gpu` — always-on, OS-agnostic, best-effort detection
   - Zero vendor SDK compile-time dependencies
 
+### ai-hwaccel Integration
+- **Hardware detection wired in** — `ai_hwaccel::CachedRegistry` with 5-minute TTL in `tazama-media::hwaccel`
+- `available_encoders()` now uses ai-hwaccel to detect VAAPI (AMD/Intel GPU) and NVENC (NVIDIA GPU) instead of GStreamer `ElementFactory::find`
+- Removed stale `hardware_accel: bool` from `ExportConfig` — replaced by `ExportEncoder` enum + ai-hwaccel detection
+- GPU crate logs detected hardware on context init via `log_detected_hardware()`
+- `detect_gpu_hardware()` public function exposes GPU info (name, VRAM, compute capability, driver)
+- New `detect_hardware` Tauri IPC command returns accelerators + available encoders
+- New `tazama_detect_hardware` MCP tool (8 tools total)
+- TypeScript `HardwareInfo` type and `detectHardware()` IPC wrapper added
+
 ### Tarang Default Pipeline
 - **Tarang is now always-on** — removed `tarang` feature flag, tarang + symphonia are non-optional dependencies
 - Removed 43 `#[cfg(feature = "tarang")]` gates across 8 source files

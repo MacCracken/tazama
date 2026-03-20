@@ -39,7 +39,7 @@ Tazama is an AI-native non-linear video editor. MVP target: import media, arrang
 - Tarang now always-on (feature flag removed), GStreamer as fallback (2026.3.19)
 - Audio probe 15.4× faster, audio decode 3.96× faster than GStreamer
 - Remaining: full tarang video export (currently stub, falls back to GStreamer)
-- Remaining: ai-hwaccel integration for hardware decode selection
+- ai-hwaccel integrated — cached registry, encoder detection, GPU info, IPC command, MCP tool (2026.3.20)
 - Remaining: drop GStreamer as required dependency (optional fallback only)
 
 ### AI Features (Tier 1)

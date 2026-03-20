@@ -55,40 +55,28 @@ pub struct ExportConfig {
     #[serde(default)]
     pub audio_codec: Option<ExportAudioCodec>,
     #[serde(default)]
-    pub hardware_accel: bool,
-    #[serde(default)]
     pub encoder: ExportEncoder,
 }
 
 /// Probe which encoder backends are available on this system.
 ///
-/// Checks for GStreamer element factories; returns a list of `ExportEncoder`
-/// variants that can be used.  `Software` is always included since x264enc is
-/// a build-time dependency.
+/// Uses `ai-hwaccel` to detect hardware accelerators; returns a list of
+/// `ExportEncoder` variants that can be used.  `Software` is always included.
 pub fn available_encoders() -> Vec<ExportEncoder> {
-    let _ = gstreamer::init();
     let mut encoders = vec![ExportEncoder::Software];
 
-    if gstreamer::ElementFactory::find("vaapih264enc").is_some() {
-        info!("VAAPI encoder available");
+    if crate::hwaccel::has_vaapi() {
+        info!("VAAPI encoder available (AMD/Intel GPU detected)");
         encoders.push(ExportEncoder::Vaapi);
-    } else {
-        info!("VAAPI encoder not found");
     }
-
-    if gstreamer::ElementFactory::find("nvh264enc").is_some() {
-        info!("NVENC encoder available");
+    if crate::hwaccel::has_nvenc() {
+        info!("NVENC encoder available (NVIDIA GPU detected)");
         encoders.push(ExportEncoder::Nvenc);
-    } else {
-        info!("NVENC encoder not found");
     }
 
+    // Tarang encoder is always available since tarang is always-on
     encoders.push(ExportEncoder::Tarang);
-    info!("Tarang encoder available (feature enabled)");
-
-    // Auto is always valid since it falls back to software
     encoders.push(ExportEncoder::Auto);
-
     encoders
 }
 
@@ -187,40 +175,6 @@ mod tests {
     }
 
     #[test]
-    fn hardware_accel_defaults_to_false() {
-        let json = r#"{
-            "output_path": "/tmp/out.mp4",
-            "format": "Mp4",
-            "width": 1920,
-            "height": 1080,
-            "frame_rate": [30, 1],
-            "sample_rate": 48000,
-            "channels": 2
-        }"#;
-        let config: ExportConfig = serde_json::from_str(json).unwrap();
-        assert!(!config.hardware_accel);
-    }
-
-    #[test]
-    fn hardware_accel_serde_roundtrip() {
-        let config = ExportConfig {
-            output_path: "/tmp/out.mp4".into(),
-            format: ExportFormat::Mp4,
-            width: 1920,
-            height: 1080,
-            frame_rate: (30, 1),
-            sample_rate: 48000,
-            channels: 2,
-            audio_codec: None,
-            hardware_accel: true,
-            encoder: ExportEncoder::default(),
-        };
-        let json = serde_json::to_string(&config).unwrap();
-        let back: ExportConfig = serde_json::from_str(&json).unwrap();
-        assert!(back.hardware_accel);
-    }
-
-    #[test]
     fn fraction_exceeds_total() {
         // frames_written > total_frames should produce fraction > 1.0
         let p = ExportProgress {
@@ -254,7 +208,6 @@ mod tests {
                 sample_rate: 44100,
                 channels: 2,
                 audio_codec: None,
-                hardware_accel: false,
                 encoder: ExportEncoder::default(),
             };
             let json = serde_json::to_string(&config).unwrap();
@@ -317,7 +270,6 @@ mod tests {
             sample_rate: 96000,
             channels: 6,
             audio_codec: Some(ExportAudioCodec::Aac),
-            hardware_accel: true,
             encoder: ExportEncoder::Nvenc,
         };
         assert_eq!(config.width, 3840);
@@ -326,7 +278,6 @@ mod tests {
         assert_eq!(config.sample_rate, 96000);
         assert_eq!(config.channels, 6);
         assert_eq!(config.audio_codec, Some(ExportAudioCodec::Aac));
-        assert!(config.hardware_accel);
         assert_eq!(config.encoder, ExportEncoder::Nvenc);
     }
 
@@ -346,7 +297,6 @@ mod tests {
                 sample_rate: 48000,
                 channels: 2,
                 audio_codec: Some(codec),
-                hardware_accel: false,
                 encoder: ExportEncoder::default(),
             };
             let json = serde_json::to_string(&config).unwrap();
@@ -403,7 +353,6 @@ mod tests {
                 sample_rate: 48000,
                 channels: 2,
                 audio_codec: None,
-                hardware_accel: false,
                 encoder: encoder.clone(),
             };
             let json = serde_json::to_string(&config).unwrap();
@@ -488,7 +437,6 @@ mod tests {
             sample_rate: 22050,
             channels: 1,
             audio_codec: Some(ExportAudioCodec::Opus),
-            hardware_accel: false,
             encoder: ExportEncoder::Software,
         };
         let cloned = config.clone();

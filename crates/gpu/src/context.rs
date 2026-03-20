@@ -114,6 +114,9 @@ impl GpuContext {
 
         tracing::info!("GPU context initialized");
 
+        // Log hardware detected by ai-hwaccel (informational only).
+        crate::hwaccel::log_detected_hardware();
+
         Ok(Self {
             _entry: entry,
             instance,
