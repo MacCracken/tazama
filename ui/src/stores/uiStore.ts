@@ -15,6 +15,9 @@ interface UIState {
     timeline: number;
   };
 
+  // Panel visibility
+  showMixer: boolean;
+
   // Dialog visibility
   showExportDialog: boolean;
   showNewProjectDialog: boolean;
@@ -32,6 +35,7 @@ interface UIState {
   setActiveTool: (tool: ActiveTool) => void;
   setThumbnailStrategy: (strategy: ThumbnailStrategy) => void;
   setPanelSize: (panel: keyof UIState["panelSizes"], size: number) => void;
+  toggleMixer: () => void;
   setShowExportDialog: (show: boolean) => void;
   setShowNewProjectDialog: (show: boolean) => void;
   showToast: (message: string, type?: "error" | "success" | "info") => void;
@@ -51,6 +55,7 @@ export const useUIStore = create<UIState>((set) => ({
     inspector: 280,
     timeline: 40,
   },
+  showMixer: false,
   showExportDialog: false,
   showNewProjectDialog: false,
   toastMessage: null,
@@ -67,6 +72,7 @@ export const useUIStore = create<UIState>((set) => ({
     set((s) => ({
       panelSizes: { ...s.panelSizes, [panel]: size },
     })),
+  toggleMixer: () => set((s) => ({ showMixer: !s.showMixer })),
   setShowExportDialog: (show) => set({ showExportDialog: show }),
   setShowNewProjectDialog: (show) => set({ showNewProjectDialog: show }),
   showToast: (message, type = "info") => set({ toastMessage: message, toastType: type }),

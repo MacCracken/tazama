@@ -82,6 +82,7 @@ pub fn run() {
             commands::set_proxy_mode,
             commands::detect_hardware,
             commands::measure_loudness,
+            commands::generate_thumbnails,
         ])
         .run(tauri::generate_context!())
         .expect("error running tazama");

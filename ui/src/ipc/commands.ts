@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Project, MediaInfo, ExportConfig, HardwareInfo, ExportEncoder } from "../types";
+import type { Project, MediaInfo, ExportConfig, HardwareInfo, ExportEncoder, ThumbnailSpec } from "../types";
 
 export async function newProject(
   name: string,
@@ -110,6 +110,19 @@ export async function generateProxies(
 
 export async function setProxyMode(enabled: boolean): Promise<void> {
   return invoke<void>("set_proxy_mode", { enabled });
+}
+
+// Thumbnail generation
+export interface ThumbnailResult {
+  timestamp_ms: number;
+  data: string; // base64-encoded RGBA
+}
+
+export async function generateThumbnails(
+  path: string,
+  spec: ThumbnailSpec,
+): Promise<ThumbnailResult[]> {
+  return invoke<ThumbnailResult[]>("generate_thumbnails", { path, spec });
 }
 
 // Audio loudness measurement

@@ -311,6 +311,38 @@ pub async fn measure_loudness(path: String) -> Result<f64, String> {
 }
 
 #[tauri::command]
+pub async fn generate_thumbnails(
+    path: String,
+    spec: tazama_core::ThumbnailSpec,
+) -> Result<Vec<ThumbnailResult>, String> {
+    tazama_media::init().map_err(|e| e.to_string())?;
+
+    let thumbs = tazama_media::thumbnail::generate_thumbnails(
+        std::path::Path::new(&path),
+        spec,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(thumbs
+        .into_iter()
+        .map(|(timestamp_ms, data)| ThumbnailResult {
+            timestamp_ms,
+            data: base64::Engine::encode(
+                &base64::engine::general_purpose::STANDARD,
+                &data,
+            ),
+        })
+        .collect())
+}
+
+#[derive(Serialize)]
+pub struct ThumbnailResult {
+    pub timestamp_ms: u64,
+    pub data: String,
+}
+
+#[tauri::command]
 pub async fn detect_hardware() -> Result<serde_json::Value, String> {
     let hardware = tazama_media::hwaccel::hardware_summary();
     let encoders = tazama_media::available_encoders();

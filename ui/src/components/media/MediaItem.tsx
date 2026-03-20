@@ -1,7 +1,8 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useProjectStore } from "../../stores/projectStore";
 import { useUIStore } from "../../stores/uiStore";
 import type { Clip, ClipKind } from "../../types";
+import * as commands from "../../ipc/commands";
 
 interface MediaAsset {
   path: string;
@@ -13,9 +14,39 @@ interface MediaItemProps {
   asset: MediaAsset;
 }
 
+// Module-level cache so thumbnails survive re-renders
+const thumbCache = new Map<string, string>();
+
 export function MediaItem({ asset }: MediaItemProps) {
   const addClip = useProjectStore((s) => s.addClip);
   const project = useProjectStore((s) => s.project);
+  const thumbnailStrategy = useUIStore((s) => s.thumbnailStrategy);
+  const [thumb, setThumb] = useState<string | null>(thumbCache.get(asset.path) ?? null);
+
+  useEffect(() => {
+    if (thumbCache.has(asset.path)) {
+      setThumb(thumbCache.get(asset.path)!);
+      return;
+    }
+
+    let cancelled = false;
+    commands
+      .generateThumbnails(asset.path, {
+        width: 128,
+        height: 72,
+        interval_ms: Math.max(1000, Math.floor((asset.duration_frames / 30) * 1000)),
+        strategy: thumbnailStrategy,
+      })
+      .then((results) => {
+        if (cancelled || results.length === 0) return;
+        const dataUrl = `data:image/raw;base64,${results[0].data}`;
+        thumbCache.set(asset.path, dataUrl);
+        setThumb(dataUrl);
+      })
+      .catch(() => {});
+
+    return () => { cancelled = true; };
+  }, [asset.path, asset.duration_frames, thumbnailStrategy]);
 
   const handleDragStart = useCallback(
     (e: React.DragEvent) => {
@@ -67,10 +98,24 @@ export function MediaItem({ asset }: MediaItemProps) {
       onDoubleClick={handleDoubleClick}
       style={{ color: "var(--text-primary)" }}
     >
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="var(--text-muted)">
-        <rect x="1" y="1" width="12" height="12" rx="2" stroke="currentColor" fill="none" strokeWidth="1" />
-        <path d="M5 4l4 3-4 3V4z" fill="currentColor" />
-      </svg>
+      {thumb ? (
+        <div
+          className="flex-shrink-0 rounded overflow-hidden"
+          style={{ width: 32, height: 18, background: "var(--bg-primary)" }}
+        >
+          <img
+            src={thumb}
+            alt=""
+            className="w-full h-full object-cover"
+            style={{ imageRendering: "auto" }}
+          />
+        </div>
+      ) : (
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="var(--text-muted)">
+          <rect x="1" y="1" width="12" height="12" rx="2" stroke="currentColor" fill="none" strokeWidth="1" />
+          <path d="M5 4l4 3-4 3V4z" fill="currentColor" />
+        </svg>
+      )}
       <span className="flex-1 truncate">{asset.name}</span>
     </div>
   );
