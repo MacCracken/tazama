@@ -49,17 +49,41 @@ jobs:
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
-          # GStreamer via choco (avoids freedesktop.org bot detection)
-          choco install gstreamer gstreamer-devel --version=1.22.6 -y --no-progress
-          $GstRoot = "C:\gstreamer\1.0\msvc_x86_64"
-          if (Test-Path $GstRoot) {
-            echo "GSTREAMER_1_0_ROOT_MSVC_X86_64=$GstRoot" >> $env:GITHUB_ENV
-            echo "PKG_CONFIG_PATH=$GstRoot\lib\pkgconfig" >> $env:GITHUB_ENV
-            echo "$GstRoot\bin" >> $env:GITHUB_PATH
-          }
-
           # pkg-config for Rust build scripts
           choco install pkgconfiglite -y --no-progress
+
+          # GStreamer via choco
+          choco install gstreamer gstreamer-devel -y --no-progress
+
+          # Find GStreamer install path (choco installs vary)
+          $GstCandidates = @(
+            "C:\gstreamer\1.0\msvc_x86_64",
+            "C:\gstreamer\1.0\x86_64",
+            "${env:ProgramFiles}\GStreamer\1.0\msvc_x86_64",
+            "${env:ProgramFiles}\GStreamer\1.0\x86_64"
+          )
+          $GstRoot = $null
+          foreach ($p in $GstCandidates) {
+            if (Test-Path "$p\lib\pkgconfig") {
+              $GstRoot = $p
+              break
+            }
+          }
+          if (-not $GstRoot) {
+            Write-Host "Searching for glib-2.0.pc..."
+            $found = Get-ChildItem -Path C:\ -Filter "glib-2.0.pc" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) {
+              $GstRoot = (Split-Path (Split-Path $found.FullName))
+              Write-Host "Found GStreamer at: $GstRoot"
+            } else {
+              Write-Error "GStreamer pkg-config files not found"
+              exit 1
+            }
+          }
+          Write-Host "GStreamer root: $GstRoot"
+          echo "GSTREAMER_1_0_ROOT_MSVC_X86_64=$GstRoot" >> $env:GITHUB_ENV
+          echo "PKG_CONFIG_PATH=$GstRoot\lib\pkgconfig" >> $env:GITHUB_ENV
+          echo "$GstRoot\bin" >> $env:GITHUB_PATH
 
           # Tarang codec deps via vcpkg (pre-installed on GitHub runners)
           vcpkg install dav1d:x64-windows libvpx:x64-windows opus:x64-windows
