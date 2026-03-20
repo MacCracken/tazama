@@ -73,6 +73,12 @@ interface ProjectState {
     clipId: string,
     effectId: string,
   ) => void;
+  updateEffect: (
+    trackId: string,
+    clipId: string,
+    effectId: string,
+    kind: import("../types").EffectKind,
+  ) => void;
   setKeyframeTracks: (
     trackId: string,
     clipId: string,
@@ -362,6 +368,17 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       if (clip) {
         clip.effects = clip.effects.filter((e) => e.id !== effectId);
       }
+    });
+  },
+
+  updateEffect: (trackId, clipId, effectId, kind) => {
+    get()._mutate((p) => {
+      const track = p.timeline.tracks.find((t) => t.id === trackId);
+      if (!track) return;
+      const clip = track.clips.find((c) => c.id === clipId);
+      if (!clip) return;
+      const effect = clip.effects.find((e) => e.id === effectId);
+      if (effect) effect.kind = kind;
     });
   },
 

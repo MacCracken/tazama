@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ActiveTool } from "../types";
+import type { ActiveTool, ThumbnailStrategy } from "../types";
 
 interface UIState {
   selectedClipId: string | null;
@@ -8,6 +8,7 @@ interface UIState {
   scrollX: number;
   scrollY: number;
   activeTool: ActiveTool;
+  thumbnailStrategy: ThumbnailStrategy;
   panelSizes: {
     mediaBrowser: number;
     inspector: number;
@@ -29,6 +30,7 @@ interface UIState {
   setScrollX: (x: number) => void;
   setScrollY: (y: number) => void;
   setActiveTool: (tool: ActiveTool) => void;
+  setThumbnailStrategy: (strategy: ThumbnailStrategy) => void;
   setPanelSize: (panel: keyof UIState["panelSizes"], size: number) => void;
   setShowExportDialog: (show: boolean) => void;
   setShowNewProjectDialog: (show: boolean) => void;
@@ -43,6 +45,7 @@ export const useUIStore = create<UIState>((set) => ({
   scrollX: 0,
   scrollY: 0,
   activeTool: "select",
+  thumbnailStrategy: "SceneBased",
   panelSizes: {
     mediaBrowser: 240,
     inspector: 280,
@@ -59,6 +62,7 @@ export const useUIStore = create<UIState>((set) => ({
   setScrollX: (x) => set({ scrollX: Math.max(0, x) }),
   setScrollY: (y) => set({ scrollY: Math.max(0, y) }),
   setActiveTool: (tool) => set({ activeTool: tool }),
+  setThumbnailStrategy: (strategy) => set({ thumbnailStrategy: strategy }),
   setPanelSize: (panel, size) =>
     set((s) => ({
       panelSizes: { ...s.panelSizes, [panel]: size },
