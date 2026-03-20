@@ -12,6 +12,14 @@
   - Added to both `tazama-media` and `tazama-gpu` — always-on, OS-agnostic, best-effort detection
   - Zero vendor SDK compile-time dependencies
 
+### Tarang Video Export Pipeline
+- **MKV export fully native** via tarang — H.264 encode (openh264) + audio encode + custom dual-track EBML muxer
+- RGBA→YUV420p conversion with BT.601 coefficients
+- Audio codec selection: FLAC, Opus, AAC per config, with format-specific defaults
+- Progress reporting via watch channel, same interface as GStreamer pipeline
+- MP4/WebM/ProRes/DnxHr/GIF fall back to GStreamer (tarang Mp4Muxer is audio-only, VP9 encoder pending vpx-sys fix)
+- 15 new tests covering conversion, codec selection, EBML muxing
+
 ### ai-hwaccel Integration
 - **Hardware detection wired in** — `ai_hwaccel::CachedRegistry` with 5-minute TTL in `tazama-media::hwaccel`
 - `available_encoders()` now uses ai-hwaccel to detect VAAPI (AMD/Intel GPU) and NVENC (NVIDIA GPU) instead of GStreamer `ElementFactory::find`

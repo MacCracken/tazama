@@ -80,10 +80,22 @@ HTML reports are generated in `target/criterion/` (excluded from git).
 
 Tarang's probe is 15× faster because symphonia reads headers directly — no GStreamer pipeline/element setup overhead. Audio decode is 4× faster due to in-process decoding vs GStreamer's inter-element data flow.
 
-These numbers strongly support completing the Tarang migration for audio workloads. Video decode benchmarks pending (requires real video test fixtures).
+### Tarang vs GStreamer — Video (real media fixtures, 320×240 2s)
+
+| Operation | Format | GStreamer | Tarang | Speedup |
+|-----------|--------|----------|--------|---------|
+| **Probe** | MP4 (H.264) | 3.30 ms | 179 µs | **18.4× faster** |
+| **Probe** | WebM (VP9) | 3.13 ms | 158 µs | **19.8× faster** |
+| **Probe** | MKV (H.264) | 3.39 ms | 170 µs | **19.9× faster** |
+| **Decode** | MP4 10 frames | 5.70 ms | 175 µs | **32.6× faster** |
+
+Video probing is ~18-20× faster across all container formats. Video decode (10 frames H.264) is **32.6× faster** — tarang's openh264 FFI wrapper with direct demux has dramatically less overhead than GStreamer's full pipeline setup.
+
+These numbers decisively validate the tarang migration. The remaining GStreamer fallback is only needed for formats tarang doesn't yet support (ProRes, DNxHR).
+
+Test fixtures generated via `scripts/generate-test-fixtures.sh` (requires ffmpeg).
 
 ## Planned Benchmarks
 
-- GPU render — frame render time at 1080p/4K with effect chains
+- GPU render — frame render time at 1080p/4K with effect chain overhead
 - Export pipeline — encode throughput per format
-- Video probe/decode — Tarang vs GStreamer with real MP4/MKV/WebM files

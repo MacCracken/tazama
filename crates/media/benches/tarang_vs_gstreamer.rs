@@ -160,5 +160,180 @@ fn bench_audio_decode(c: &mut Criterion) {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-criterion_group!(benches, bench_probe, bench_audio_decode);
+// ---------------------------------------------------------------------------
+// Video probe benchmark (real media fixtures)
+// ---------------------------------------------------------------------------
+
+fn bench_video_probe(c: &mut Criterion) {
+    tazama_media::init().ok();
+
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures");
+
+    if !fixtures.join("test_h264.mp4").exists() {
+        eprintln!("SKIP video benchmarks: run scripts/generate-test-fixtures.sh first");
+        return;
+    }
+
+    let mut group = c.benchmark_group("video_probe");
+
+    // MP4 (H.264) — tarang path (.mp4 extension)
+    let mp4_path = fixtures.join("test_h264.mp4");
+    group.bench_function("tarang_mp4", |b| {
+        b.iter(|| {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(tazama_media::probe::probe(black_box(&mp4_path)))
+        })
+    });
+
+    // MP4 via GStreamer — copy to .mxf to bypass tarang extension check
+    let gst_mp4 = fixtures.join("test_h264_gst.mxf");
+    std::fs::copy(&mp4_path, &gst_mp4).ok();
+    group.bench_function("gstreamer_mp4", |b| {
+        b.iter(|| {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(tazama_media::probe::probe(black_box(&gst_mp4)))
+        })
+    });
+
+    // WebM (VP9) — tarang path
+    let webm_path = fixtures.join("test_vp9.webm");
+    group.bench_function("tarang_webm", |b| {
+        b.iter(|| {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(tazama_media::probe::probe(black_box(&webm_path)))
+        })
+    });
+
+    // WebM via GStreamer
+    let gst_webm = fixtures.join("test_vp9_gst.mxf");
+    std::fs::copy(&webm_path, &gst_webm).ok();
+    group.bench_function("gstreamer_webm", |b| {
+        b.iter(|| {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(tazama_media::probe::probe(black_box(&gst_webm)))
+        })
+    });
+
+    // MKV (H.264) — tarang path
+    let mkv_path = fixtures.join("test_h264.mkv");
+    group.bench_function("tarang_mkv", |b| {
+        b.iter(|| {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(tazama_media::probe::probe(black_box(&mkv_path)))
+        })
+    });
+
+    // MKV via GStreamer
+    let gst_mkv = fixtures.join("test_h264_gst_mkv.mxf");
+    std::fs::copy(&mkv_path, &gst_mkv).ok();
+    group.bench_function("gstreamer_mkv", |b| {
+        b.iter(|| {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(tazama_media::probe::probe(black_box(&gst_mkv)))
+        })
+    });
+
+    group.finish();
+    // Clean up GStreamer copies
+    let _ = std::fs::remove_file(&gst_mp4);
+    let _ = std::fs::remove_file(&gst_webm);
+    let _ = std::fs::remove_file(&gst_mkv);
+}
+
+// ---------------------------------------------------------------------------
+// Video decode benchmark (real media fixtures)
+// ---------------------------------------------------------------------------
+
+fn bench_video_decode(c: &mut Criterion) {
+    tazama_media::init().ok();
+
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures");
+
+    if !fixtures.join("test_h264.mp4").exists() {
+        eprintln!("SKIP video decode benchmarks: run scripts/generate-test-fixtures.sh first");
+        return;
+    }
+
+    let mut group = c.benchmark_group("video_decode");
+    // Decode fewer iterations since video is slower
+    group.sample_size(20);
+
+    // MP4 (H.264) via tarang
+    let mp4_path = fixtures.join("test_h264.mp4");
+    group.bench_function("tarang_mp4_10frames", |b| {
+        b.iter(|| {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(async {
+                let config = tazama_media::decode::DecoderConfig {
+                    path: black_box(mp4_path.clone()),
+                };
+                let decoder = tazama_media::decode::video::VideoDecoder::new(config);
+                let range = tazama_media::decode::FrameRange { start: 0, end: 9 };
+                let mut rx = decoder.decode(range).unwrap();
+                let mut count = 0usize;
+                while let Some(_frame) = rx.recv().await {
+                    count += 1;
+                }
+                count
+            })
+        })
+    });
+
+    // MP4 via GStreamer
+    let gst_mp4 = fixtures.join("test_h264_decode_gst.avi");
+    std::fs::copy(&mp4_path, &gst_mp4).ok();
+    group.bench_function("gstreamer_mp4_10frames", |b| {
+        b.iter(|| {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(async {
+                let config = tazama_media::decode::DecoderConfig {
+                    path: black_box(gst_mp4.clone()),
+                };
+                let decoder = tazama_media::decode::video::VideoDecoder::new(config);
+                let range = tazama_media::decode::FrameRange { start: 0, end: 9 };
+                let mut rx = decoder.decode(range).unwrap();
+                let mut count = 0usize;
+                while let Some(_frame) = rx.recv().await {
+                    count += 1;
+                }
+                count
+            })
+        })
+    });
+
+    group.finish();
+    let _ = std::fs::remove_file(&gst_mp4);
+}
+
+criterion_group!(
+    benches,
+    bench_probe,
+    bench_audio_decode,
+    bench_video_probe,
+    bench_video_decode
+);
 criterion_main!(benches);

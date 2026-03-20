@@ -24,14 +24,22 @@ Tazama is an AI-native non-linear video editor.
 - [ ] GPU render — frame render time at 1080p/4K, effect chain overhead
 - [ ] GPU render — cross-vendor comparison (AMD RADV vs NVIDIA vs Intel)
 - [ ] Export pipeline — encode throughput per format
-- [ ] Tarang vs GStreamer video — probe/decode with real MP4/MKV/WebM fixtures
+- [x] Tarang vs GStreamer video — probe 18-20× faster, decode 32.6× faster (2026.3.20)
+
+### Tarang vs GStreamer (benchmarked 2026.3.19–20)
+- Audio probe: **15.4× faster** (80 µs vs 1.24 ms)
+- Audio decode: **3.96× faster** (336 µs vs 1.33 ms)
+- Video probe: **18-20× faster** (158–179 µs vs 3.1–3.4 ms) across MP4/WebM/MKV
+- Video decode (10 frames H.264): **32.6× faster** (175 µs vs 5.7 ms)
 
 ---
 
 ## Post-v1 Features
 
 ### Tarang Media Backend Migration (in progress)
-- Remaining: full tarang video export (currently stub, falls back to GStreamer)
+- MKV export fully native via tarang (H.264 + audio + EBML muxer) (2026.3.20)
+- Remaining: MP4 video muxing (tarang Mp4Muxer is audio-only)
+- Remaining: WebM export (VP9 encode pending vpx-sys compatibility fix)
 - Remaining: drop GStreamer as required dependency (optional fallback only)
 
 ### AI Features (Tier 1)
