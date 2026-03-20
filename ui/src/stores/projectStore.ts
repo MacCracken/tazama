@@ -100,6 +100,10 @@ interface ProjectState {
 
   // Internal
   _mutate: (fn: (project: Project) => void) => void;
+  /** Mutate without pushing undo — use for continuous drags/sliders. */
+  _mutateSilent: (fn: (project: Project) => void) => void;
+  /** Push the current state to the undo stack (call once before a silent-mutate sequence). */
+  _pushUndo: () => void;
 }
 
 export const useProjectStore = create<ProjectState>((set, get) => ({
@@ -159,6 +163,21 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       project: produce(project, fn),
       dirty: true,
     });
+  },
+
+  _mutateSilent: (fn) => {
+    const { project } = get();
+    if (!project) return;
+    set({
+      project: produce(project, fn),
+      dirty: true,
+    });
+  },
+
+  _pushUndo: () => {
+    const { project } = get();
+    if (!project) return;
+    useHistoryStore.getState().pushState(project);
   },
 
   addMarker: (name, frame, color) => {
@@ -372,7 +391,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   updateEffect: (trackId, clipId, effectId, kind) => {
-    get()._mutate((p) => {
+    get()._mutateSilent((p) => {
       const track = p.timeline.tracks.find((t) => t.id === trackId);
       if (!track) return;
       const clip = track.clips.find((c) => c.id === clipId);

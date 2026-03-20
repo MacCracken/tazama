@@ -92,6 +92,20 @@ export function ClipBlock({
   const isSelected = selectedClipId === clip.id;
   const ref = useRef<HTMLDivElement>(null);
   const [waveform, setWaveform] = useState<WaveformData | null>(null);
+  const [blockHeight, setBlockHeight] = useState(40);
+
+  // Track container height for waveform canvas sizing
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setBlockHeight(entry.contentRect.height);
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const { onMouseDown: onDragStart } = useDragClip(trackId, clip, trackLocked);
   const { onMouseDownLeft, onMouseDownRight } = useTrimClip(
@@ -169,11 +183,11 @@ export function ClipBlock({
       onMouseDown={handleMouseDown}
     >
       {/* Waveform */}
-      {waveform && (
+      {waveform && blockHeight > 0 && (
         <WaveformOverlay
           waveform={waveform}
           width={blockWidth}
-          height={ref.current?.clientHeight ?? 40}
+          height={blockHeight}
         />
       )}
       {/* Left trim handle */}

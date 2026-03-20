@@ -8,7 +8,7 @@ interface EffectEditorProps {
   clipId: string;
 }
 
-// Reusable slider row
+// Reusable slider row — pushes undo on mousedown, then silent-mutates during drag
 function Param({
   label,
   value,
@@ -17,6 +17,7 @@ function Param({
   step,
   suffix,
   onChange,
+  onStart,
 }: {
   label: string;
   value: number;
@@ -25,6 +26,7 @@ function Param({
   step: number;
   suffix?: string;
   onChange: (v: number) => void;
+  onStart?: () => void;
 }) {
   return (
     <div className="flex items-center gap-1">
@@ -40,6 +42,8 @@ function Param({
         max={max}
         step={step}
         value={value}
+        onMouseDown={onStart}
+        onTouchStart={onStart}
         onChange={(e) => onChange(parseFloat(e.target.value))}
         className="flex-1 h-3"
       />
@@ -56,6 +60,7 @@ function Param({
 
 export function EffectEditor({ effect, trackId, clipId }: EffectEditorProps) {
   const updateEffect = useProjectStore((s) => s.updateEffect);
+  const pushUndo = useProjectStore((s) => s._pushUndo);
 
   const update = useCallback(
     (kind: EffectKind) => updateEffect(trackId, clipId, effect.id, kind),
@@ -70,10 +75,10 @@ export function EffectEditor({ effect, trackId, clipId }: EffectEditorProps) {
       update({ ColorGrade: { ...k, [field]: v } });
     return (
       <div className="space-y-1">
-        <Param label="Brightness" value={k.brightness} min={-1} max={1} step={0.01} onChange={(v) => set("brightness", v)} />
-        <Param label="Contrast" value={k.contrast} min={0} max={3} step={0.01} onChange={(v) => set("contrast", v)} />
-        <Param label="Saturation" value={k.saturation} min={0} max={3} step={0.01} onChange={(v) => set("saturation", v)} />
-        <Param label="Temperature" value={k.temperature} min={-1} max={1} step={0.01} onChange={(v) => set("temperature", v)} />
+        <Param onStart={pushUndo} label="Brightness" value={k.brightness} min={-1} max={1} step={0.01} onChange={(v) => set("brightness", v)} />
+        <Param onStart={pushUndo} label="Contrast" value={k.contrast} min={0} max={3} step={0.01} onChange={(v) => set("contrast", v)} />
+        <Param onStart={pushUndo} label="Saturation" value={k.saturation} min={0} max={3} step={0.01} onChange={(v) => set("saturation", v)} />
+        <Param onStart={pushUndo} label="Temperature" value={k.temperature} min={-1} max={1} step={0.01} onChange={(v) => set("temperature", v)} />
       </div>
     );
   }
@@ -84,10 +89,10 @@ export function EffectEditor({ effect, trackId, clipId }: EffectEditorProps) {
       update({ Crop: { ...k, [field]: v } });
     return (
       <div className="space-y-1">
-        <Param label="Left" value={k.left} min={0} max={1} step={0.01} onChange={(v) => set("left", v)} />
-        <Param label="Top" value={k.top} min={0} max={1} step={0.01} onChange={(v) => set("top", v)} />
-        <Param label="Right" value={k.right} min={0} max={1} step={0.01} onChange={(v) => set("right", v)} />
-        <Param label="Bottom" value={k.bottom} min={0} max={1} step={0.01} onChange={(v) => set("bottom", v)} />
+        <Param onStart={pushUndo} label="Left" value={k.left} min={0} max={1} step={0.01} onChange={(v) => set("left", v)} />
+        <Param onStart={pushUndo} label="Top" value={k.top} min={0} max={1} step={0.01} onChange={(v) => set("top", v)} />
+        <Param onStart={pushUndo} label="Right" value={k.right} min={0} max={1} step={0.01} onChange={(v) => set("right", v)} />
+        <Param onStart={pushUndo} label="Bottom" value={k.bottom} min={0} max={1} step={0.01} onChange={(v) => set("bottom", v)} />
       </div>
     );
   }
@@ -95,6 +100,7 @@ export function EffectEditor({ effect, trackId, clipId }: EffectEditorProps) {
   if ("Speed" in kind) {
     return (
       <Param
+        onStart={pushUndo}
         label="Factor"
         value={kind.Speed.factor}
         min={0.1}
@@ -109,6 +115,7 @@ export function EffectEditor({ effect, trackId, clipId }: EffectEditorProps) {
   if ("Volume" in kind) {
     return (
       <Param
+        onStart={pushUndo}
         label="Gain"
         value={kind.Volume.gain_db}
         min={-60}
@@ -123,6 +130,7 @@ export function EffectEditor({ effect, trackId, clipId }: EffectEditorProps) {
   if ("FadeIn" in kind) {
     return (
       <Param
+        onStart={pushUndo}
         label="Duration"
         value={kind.FadeIn.duration_frames}
         min={1}
@@ -137,6 +145,7 @@ export function EffectEditor({ effect, trackId, clipId }: EffectEditorProps) {
   if ("FadeOut" in kind) {
     return (
       <Param
+        onStart={pushUndo}
         label="Duration"
         value={kind.FadeOut.duration_frames}
         min={1}
@@ -176,6 +185,7 @@ export function EffectEditor({ effect, trackId, clipId }: EffectEditorProps) {
           </select>
         </div>
         <Param
+          onStart={pushUndo}
           label="Duration"
           value={kind.Transition.duration_frames}
           min={1}
@@ -196,9 +206,9 @@ export function EffectEditor({ effect, trackId, clipId }: EffectEditorProps) {
       update({ Eq: { ...k, [field]: v } });
     return (
       <div className="space-y-1">
-        <Param label="Low" value={k.low_gain_db} min={-24} max={24} step={0.5} suffix="dB" onChange={(v) => set("low_gain_db", v)} />
-        <Param label="Mid" value={k.mid_gain_db} min={-24} max={24} step={0.5} suffix="dB" onChange={(v) => set("mid_gain_db", v)} />
-        <Param label="High" value={k.high_gain_db} min={-24} max={24} step={0.5} suffix="dB" onChange={(v) => set("high_gain_db", v)} />
+        <Param onStart={pushUndo} label="Low" value={k.low_gain_db} min={-24} max={24} step={0.5} suffix="dB" onChange={(v) => set("low_gain_db", v)} />
+        <Param onStart={pushUndo} label="Mid" value={k.mid_gain_db} min={-24} max={24} step={0.5} suffix="dB" onChange={(v) => set("mid_gain_db", v)} />
+        <Param onStart={pushUndo} label="High" value={k.high_gain_db} min={-24} max={24} step={0.5} suffix="dB" onChange={(v) => set("high_gain_db", v)} />
       </div>
     );
   }
@@ -209,10 +219,10 @@ export function EffectEditor({ effect, trackId, clipId }: EffectEditorProps) {
       update({ Compressor: { ...k, [field]: v } });
     return (
       <div className="space-y-1">
-        <Param label="Threshold" value={k.threshold_db} min={-60} max={0} step={0.5} suffix="dB" onChange={(v) => set("threshold_db", v)} />
-        <Param label="Ratio" value={k.ratio} min={1} max={20} step={0.5} onChange={(v) => set("ratio", v)} />
-        <Param label="Attack" value={k.attack_ms} min={0.1} max={200} step={1} suffix="ms" onChange={(v) => set("attack_ms", v)} />
-        <Param label="Release" value={k.release_ms} min={1} max={2000} step={10} suffix="ms" onChange={(v) => set("release_ms", v)} />
+        <Param onStart={pushUndo} label="Threshold" value={k.threshold_db} min={-60} max={0} step={0.5} suffix="dB" onChange={(v) => set("threshold_db", v)} />
+        <Param onStart={pushUndo} label="Ratio" value={k.ratio} min={1} max={20} step={0.5} onChange={(v) => set("ratio", v)} />
+        <Param onStart={pushUndo} label="Attack" value={k.attack_ms} min={0.1} max={200} step={1} suffix="ms" onChange={(v) => set("attack_ms", v)} />
+        <Param onStart={pushUndo} label="Release" value={k.release_ms} min={1} max={2000} step={10} suffix="ms" onChange={(v) => set("release_ms", v)} />
       </div>
     );
   }
@@ -220,6 +230,7 @@ export function EffectEditor({ effect, trackId, clipId }: EffectEditorProps) {
   if ("NoiseReduction" in kind) {
     return (
       <Param
+        onStart={pushUndo}
         label="Strength"
         value={kind.NoiseReduction.strength}
         min={0}
@@ -236,9 +247,9 @@ export function EffectEditor({ effect, trackId, clipId }: EffectEditorProps) {
       update({ Reverb: { ...k, [field]: v } });
     return (
       <div className="space-y-1">
-        <Param label="Room" value={k.room_size} min={0} max={1} step={0.01} onChange={(v) => set("room_size", v)} />
-        <Param label="Damping" value={k.damping} min={0} max={1} step={0.01} onChange={(v) => set("damping", v)} />
-        <Param label="Wet" value={k.wet} min={0} max={1} step={0.01} onChange={(v) => set("wet", v)} />
+        <Param onStart={pushUndo} label="Room" value={k.room_size} min={0} max={1} step={0.01} onChange={(v) => set("room_size", v)} />
+        <Param onStart={pushUndo} label="Damping" value={k.damping} min={0} max={1} step={0.01} onChange={(v) => set("damping", v)} />
+        <Param onStart={pushUndo} label="Wet" value={k.wet} min={0} max={1} step={0.01} onChange={(v) => set("wet", v)} />
       </div>
     );
   }
@@ -246,6 +257,7 @@ export function EffectEditor({ effect, trackId, clipId }: EffectEditorProps) {
   if ("LoudnessNormalize" in kind) {
     return (
       <Param
+        onStart={pushUndo}
         label="Target"
         value={kind.LoudnessNormalize.target_lufs}
         min={-36}
@@ -263,10 +275,10 @@ export function EffectEditor({ effect, trackId, clipId }: EffectEditorProps) {
       update({ Transform: { ...k, [field]: v } });
     return (
       <div className="space-y-1">
-        <Param label="Scale X" value={k.scale_x} min={0.01} max={5} step={0.01} onChange={(v) => set("scale_x", v)} />
-        <Param label="Scale Y" value={k.scale_y} min={0.01} max={5} step={0.01} onChange={(v) => set("scale_y", v)} />
-        <Param label="X" value={k.translate_x} min={-2000} max={2000} step={1} onChange={(v) => set("translate_x", v)} />
-        <Param label="Y" value={k.translate_y} min={-2000} max={2000} step={1} onChange={(v) => set("translate_y", v)} />
+        <Param onStart={pushUndo} label="Scale X" value={k.scale_x} min={0.01} max={5} step={0.01} onChange={(v) => set("scale_x", v)} />
+        <Param onStart={pushUndo} label="Scale Y" value={k.scale_y} min={0.01} max={5} step={0.01} onChange={(v) => set("scale_y", v)} />
+        <Param onStart={pushUndo} label="X" value={k.translate_x} min={-2000} max={2000} step={1} onChange={(v) => set("translate_x", v)} />
+        <Param onStart={pushUndo} label="Y" value={k.translate_y} min={-2000} max={2000} step={1} onChange={(v) => set("translate_y", v)} />
       </div>
     );
   }
@@ -297,9 +309,9 @@ export function EffectEditor({ effect, trackId, clipId }: EffectEditorProps) {
             }}
           />
         </div>
-        <Param label="Size" value={k.font_size} min={4} max={200} step={1} suffix="pt" onChange={(v) => update({ Text: { ...k, font_size: v } })} />
-        <Param label="X" value={k.x} min={0} max={2000} step={1} onChange={(v) => update({ Text: { ...k, x: v } })} />
-        <Param label="Y" value={k.y} min={0} max={2000} step={1} onChange={(v) => update({ Text: { ...k, y: v } })} />
+        <Param onStart={pushUndo} label="Size" value={k.font_size} min={4} max={200} step={1} suffix="pt" onChange={(v) => update({ Text: { ...k, font_size: v } })} />
+        <Param onStart={pushUndo} label="X" value={k.x} min={0} max={2000} step={1} onChange={(v) => update({ Text: { ...k, x: v } })} />
+        <Param onStart={pushUndo} label="Y" value={k.y} min={0} max={2000} step={1} onChange={(v) => update({ Text: { ...k, y: v } })} />
       </div>
     );
   }
