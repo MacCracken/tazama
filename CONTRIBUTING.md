@@ -14,9 +14,10 @@ make check
 
 ### System Dependencies
 
-- Rust 1.85+ (edition 2024)
+- Rust 1.89+ (edition 2024)
 - Node.js 20+, npm
-- GStreamer 1.24+ with gstreamer-plugins-{base,good,bad,ugly} and gst-libav
+- GStreamer 1.20+ with plugins-base and plugins-good
+- Tarang codec libraries: dav1d, libvpx, openh264, opus, fdk-aac
 - Vulkan SDK or lavapipe
 - ALSA/PipeWire development libraries
 

@@ -6,40 +6,33 @@ Tazama is an AI-native non-linear video editor.
 
 - **Phase 0–5** — Scaffold, media pipeline, editing backend, GPU rendering, desktop UI, MCP & AGNOS integration
 - **Post-v1 non-AI features** — Keyframe animation, audio DSP, mixer, voiceover, LUT, text, PiP, speed ramping, proxy, multi-cam, autosave, WASM plugins, format expansion, hardware encode (2026.3.18)
-- **Dependencies** — Tarang to crates.io v0.19.3 (always-on, 15× faster probe), ai-hwaccel integrated (cached registry, encoder detection, IPC/MCP) (2026.3.19–20)
-- **Code audit & security** — DSP hardening, GPU render split, autosave race fix, export encoder selection, WASM sandboxing, path traversal, integer overflow, TS/Rust type parity, EffectContext refactor, JSON limits, TOCTOU fix (2026.3.19)
-- **Test & benchmark suite** — 745 tests, GPU integration (AMD RADV), app command tests, criterion benchmarks (DSP, keyframe, serde, tarang vs GStreamer) (2026.3.19–20)
+- **Dependencies** — Tarang always-on (15-33× faster than GStreamer), ai-hwaccel integrated (2026.3.19)
+- **Code audit & security** — DSP hardening, GPU render split, autosave race fix, WASM sandboxing, path traversal, integer overflow, EffectContext refactor (2026.3.19)
+- **Test & benchmark suite** — 760 tests, GPU integration, app command tests, criterion benchmarks (2026.3.19)
+- **Tarang export pipeline** — MKV native (H.264 + audio + EBML muxer) (2026.3.19)
+- **Windows release builds** — added to release matrix with GStreamer MSVC + vcpkg codec deps (2026.3.19)
 
 ---
 
 ## Engineering Backlog
 
 ### Test Coverage
-- [ ] GPU integration tests — NVIDIA (NVENC/CUDA), Intel (oneAPI), lavapipe (CI headless)
-- [ ] Export pipeline integration — end-to-end encoding tests (13% coverage)
-- [ ] Audio/video decode — requires real media files or mocks (0%)
-- [ ] Playback module — requires CPAL audio device mock (0%)
+- [ ] GPU integration — NVIDIA, Intel, lavapipe (CI)
+- [ ] Export pipeline — end-to-end encoding tests
+- [ ] Audio/video decode — real media files or mocks
+- [ ] Playback module — CPAL audio device mock
 
 ### Benchmarks
-- [ ] GPU render — frame render time at 1080p/4K, effect chain overhead
-- [ ] GPU render — cross-vendor comparison (AMD RADV vs NVIDIA vs Intel)
+- [ ] GPU render — 1080p/4K, cross-vendor comparison
 - [ ] Export pipeline — encode throughput per format
-- [x] Tarang vs GStreamer video — probe 18-20× faster, decode 32.6× faster (2026.3.20)
-
-### Tarang vs GStreamer (benchmarked 2026.3.19–20)
-- Audio probe: **15.4× faster** (80 µs vs 1.24 ms)
-- Audio decode: **3.96× faster** (336 µs vs 1.33 ms)
-- Video probe: **18-20× faster** (158–179 µs vs 3.1–3.4 ms) across MP4/WebM/MKV
-- Video decode (10 frames H.264): **32.6× faster** (175 µs vs 5.7 ms)
 
 ---
 
 ## Post-v1 Features
 
 ### Tarang Media Backend Migration (in progress)
-- MKV export fully native via tarang (H.264 + audio + EBML muxer) (2026.3.20)
-- Remaining: MP4 video muxing (tarang Mp4Muxer is audio-only)
-- Remaining: WebM export (VP9 encode pending vpx-sys compatibility fix)
+- Remaining: MP4 video muxing (tarang Mp4Muxer getting video support now)
+- Remaining: WebM export (VP9 encode pending vpx-sys fix)
 - Remaining: drop GStreamer as required dependency (optional fallback only)
 
 ### AI Features (Tier 1)
@@ -57,4 +50,5 @@ Tazama is an AI-native non-linear video editor.
 - Audio cleanup (AI noise removal, voice isolation)
 
 ### Platform
-- Windows release builds (MSVC toolchain, Vulkan on Windows, GStreamer MSVC binaries, Tauri Windows target, MSI/NSIS installer, CI cross-compilation)
+- [ ] Windows CI test matrix
+- [ ] Windows MSI/NSIS installer

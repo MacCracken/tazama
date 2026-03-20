@@ -29,6 +29,8 @@ jobs:
             runner: ubuntu-latest
           - platform: macos-arm64
             runner: macos-latest
+          - platform: windows
+            runner: windows-latest
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -41,7 +43,26 @@ jobs:
 
       - name: Install macOS deps
         if: matrix.platform == 'macos-arm64'
-        run: brew install gstreamer
+        run: brew install gstreamer dav1d libvpx openh264 opus fdk-aac
+
+      - name: Install Windows deps
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          # GStreamer MSVC runtime + dev
+          $GstVersion = "1.24.12"
+          $GstBase = "https://gstreamer.freedesktop.org/data/pkg/windows/$GstVersion"
+          Invoke-WebRequest "$GstBase/msvc/gstreamer-1.0-msvc-x86_64-$GstVersion.msi" -OutFile gst-runtime.msi
+          Invoke-WebRequest "$GstBase/msvc/gstreamer-1.0-devel-msvc-x86_64-$GstVersion.msi" -OutFile gst-devel.msi
+          Start-Process msiexec -ArgumentList "/i gst-runtime.msi /quiet /norestart INSTALLDIR=C:\gstreamer" -Wait
+          Start-Process msiexec -ArgumentList "/i gst-devel.msi /quiet /norestart INSTALLDIR=C:\gstreamer" -Wait
+          echo "GSTREAMER_1_0_ROOT_MSVC_X86_64=C:\gstreamer" >> $env:GITHUB_ENV
+          echo "PKG_CONFIG_PATH=C:\gstreamer\lib\pkgconfig" >> $env:GITHUB_ENV
+          echo "PATH=C:\gstreamer\bin;$env:PATH" >> $env:GITHUB_ENV
+
+          # Tarang codec deps via vcpkg
+          vcpkg install dav1d:x64-windows libvpx:x64-windows openh264:x64-windows opus:x64-windows fdk-aac:x64-windows
+          echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -61,19 +82,38 @@ jobs:
       - name: Build release
         run: cargo build --release --workspace
 
-      - name: Package release
+      - name: Package release (Unix)
+        if: matrix.platform != 'windows'
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           RELEASE_DIR="tazama-${VERSION}-${{ matrix.platform }}"
           mkdir -p "${RELEASE_DIR}"
 
           cp target/release/tazama "${RELEASE_DIR}/" 2>/dev/null || true
+          cp target/release/tazama-mcp "${RELEASE_DIR}/" 2>/dev/null || true
           cp LICENSE README.md "${RELEASE_DIR}/"
           cp -r docs/ "${RELEASE_DIR}/docs/" 2>/dev/null || true
 
           tar czf "${RELEASE_DIR}.tar.gz" "${RELEASE_DIR}"
           sha256sum "${RELEASE_DIR}.tar.gz" > "${RELEASE_DIR}.tar.gz.sha256" 2>/dev/null || \
             shasum -a 256 "${RELEASE_DIR}.tar.gz" > "${RELEASE_DIR}.tar.gz.sha256"
+
+      - name: Package release (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $Version = Get-Content VERSION -Raw
+          $Version = $Version.Trim()
+          $ReleaseDir = "tazama-$Version-windows"
+          New-Item -ItemType Directory -Path $ReleaseDir -Force
+
+          Copy-Item "target\release\tazama.exe" "$ReleaseDir\" -ErrorAction SilentlyContinue
+          Copy-Item "target\release\tazama-mcp.exe" "$ReleaseDir\" -ErrorAction SilentlyContinue
+          Copy-Item LICENSE, README.md "$ReleaseDir\"
+          Copy-Item -Recurse docs "$ReleaseDir\docs" -ErrorAction SilentlyContinue
+
+          Compress-Archive -Path $ReleaseDir -DestinationPath "$ReleaseDir.zip"
+          (Get-FileHash "$ReleaseDir.zip" -Algorithm SHA256).Hash + "  $ReleaseDir.zip" | Out-File "$ReleaseDir.zip.sha256"
 
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
@@ -82,6 +122,8 @@ jobs:
           path: |
             tazama-*.tar.gz
             tazama-*.tar.gz.sha256
+            tazama-*.zip
+            tazama-*.zip.sha256
           retention-days: 7
 
   generate-sbom:
@@ -135,18 +177,17 @@ jobs:
           RAW=$(cat VERSION)
           echo "version=${RAW}" >> "$GITHUB_OUTPUT"
 
-      - name: Generate changelog
+      - name: Extract changelog
         id: changelog
         run: |
-          TAG_COUNT=$(git tag --sort=-version:refname | wc -l)
-          if [ "$TAG_COUNT" -ge 2 ]; then
-            PREV_TAG=$(git tag --sort=-version:refname | sed -n '2p')
-            CHANGELOG=$(git log --oneline --no-decorate "${PREV_TAG}..HEAD")
-          else
-            CHANGELOG=$(git log --oneline --no-decorate)
+          VERSION=$(cat VERSION)
+          # Extract section for current version from CHANGELOG.md
+          BODY=$(sed -n "/^## ${VERSION}$/,/^## [0-9]/p" CHANGELOG.md | head -n -1 | tail -n +2)
+          if [ -z "$BODY" ]; then
+            BODY="See [CHANGELOG.md](https://github.com/anomalyco/tazama/blob/main/CHANGELOG.md) for details."
           fi
-          echo "changelog<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$CHANGELOG" >> "$GITHUB_OUTPUT"
+          echo "body<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$BODY" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
 
       - name: Download artifacts
@@ -161,19 +202,31 @@ jobs:
           body: |
             ## Tazama ${{ steps.version.outputs.version }}
 
-            ### Changes
-            ${{ steps.changelog.outputs.changelog }}
+            ${{ steps.changelog.outputs.body }}
 
             ### Downloads
             | Platform | Archive |
             |----------|---------|
             | Linux x86_64 | `tazama-${{ steps.version.outputs.version }}-linux.tar.gz` |
             | macOS arm64 | `tazama-${{ steps.version.outputs.version }}-macos-arm64.tar.gz` |
+            | Windows x64 | `tazama-${{ steps.version.outputs.version }}-windows.zip` |
+
+            ### Contents
+            - `tazama` — Desktop video editor (Tauri app)
+            - `tazama-mcp` — MCP server (8 tools for AI integration)
+            - `docs/` — Development documentation
+            - SBOM and license reports attached separately
 
             ### Verification
             Each archive includes a `.sha256` checksum file.
+
+            ### System Requirements
+            - Vulkan-capable GPU (or lavapipe for software rendering)
+            - GStreamer 1.20+ with base/good plugins
+            - PipeWire or ALSA for audio
           files: |
             release-artifacts/release-linux/*
             release-artifacts/release-macos-arm64/*
+            release-artifacts/release-windows/*
             release-artifacts/sbom/*
           prerelease: true

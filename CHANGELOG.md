@@ -97,6 +97,13 @@
 - Video decode (10 frames H.264): **32.6× faster** (175 µs vs 5.7 ms)
 - Test fixtures generated via `scripts/generate-test-fixtures.sh` (ffmpeg)
 
+### Windows Release Builds
+- Added `windows-latest` to release build matrix
+- GStreamer MSVC runtime + dev installed via MSI
+- Tarang codec deps (dav1d, libvpx, openh264, opus, fdk-aac) installed via vcpkg
+- Windows packaging: `.exe` binaries in `.zip` archive with SHA256 checksum
+- Release page updated with Windows x64 download row
+
 ### CI & Build Fixes
 - Added tarang codec dependencies (dav1d, libvpx, openh264, opus, fdk-aac) to CI action, Dockerfile, and testing docs
 - Removed stale `create-tarang-stubs.sh` step from CI (tarang is now on crates.io)
