@@ -128,6 +128,7 @@ export type EffectKind =
   | { Lut: { lut_path: string } }
   | { Transform: { scale_x: number; scale_y: number; translate_x: number; translate_y: number } }
   | { Text: { content: string; font_family: string; font_size: number; color: [number, number, number, number]; x: number; y: number } }
+  | { LoudnessNormalize: { target_lufs: number } }
   | { Plugin: { plugin_id: string; params: Record<string, number> } };
 
 export type TransitionKind = "Cut" | "Dissolve" | "Wipe" | "Fade";

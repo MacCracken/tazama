@@ -1,11 +1,51 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useProjectStore } from "../../stores/projectStore";
 import { useUIStore } from "../../stores/uiStore";
 import { Modal } from "../shared/Modal";
 import { ExportProgress as ExportProgressBar } from "./ExportProgress";
 import * as commands from "../../ipc/commands";
-import type { ExportFormat, ExportConfig } from "../../types";
+import type { ExportFormat, ExportConfig, HardwareInfo } from "../../types";
+
+function formatBytes(bytes: number): string {
+  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
+  if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(0)} MB`;
+  return `${bytes} B`;
+}
+
+function HardwarePanel({ hardware }: { hardware: HardwareInfo[] }) {
+  if (hardware.length === 0) return null;
+  return (
+    <div>
+      <label className="block text-[10px] mb-0.5" style={{ color: "var(--text-muted)" }}>
+        Hardware
+      </label>
+      <div className="space-y-1">
+        {hardware.map((hw, i) => (
+          <div
+            key={i}
+            className="flex items-center justify-between text-[10px] px-1.5 py-1 rounded"
+            style={{ background: "var(--bg-primary)" }}
+          >
+            <span style={{ color: "var(--text-primary)" }}>{hw.family}</span>
+            <span className="flex items-center gap-2" style={{ color: "var(--text-muted)" }}>
+              {hw.memory_free_bytes != null && (
+                <span>{formatBytes(hw.memory_free_bytes)} free</span>
+              )}
+              {hw.temperature_c != null && <span>{hw.temperature_c}°C</span>}
+              {hw.gpu_utilization_percent != null && <span>{hw.gpu_utilization_percent}%</span>}
+              {hw.memory_free_bytes == null &&
+                hw.temperature_c == null &&
+                hw.gpu_utilization_percent == null && (
+                  <span>{formatBytes(hw.memory_bytes)}</span>
+                )}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export function ExportDialog() {
   const project = useProjectStore((s) => s.project);
@@ -13,12 +53,20 @@ export function ExportDialog() {
   const showToast = useUIStore((s) => s.showToast);
   const [format, setFormat] = useState<ExportFormat>("Mp4");
   const [exporting, setExporting] = useState(false);
+  const [hardware, setHardware] = useState<HardwareInfo[]>([]);
+
+  useEffect(() => {
+    commands.detectHardware().then((result) => {
+      setHardware(result.accelerators);
+    }).catch(() => {});
+  }, []);
 
   if (!project) return null;
 
   const handleExport = async () => {
     try {
-      const ext = format === "Mp4" ? "mp4" : "webm";
+      const extMap: Record<string, string> = { Mp4: "mp4", WebM: "webm", Mkv: "mkv" };
+      const ext = extMap[format] ?? "mp4";
       const path = await save({
         filters: [{ name: format, extensions: [ext] }],
         defaultPath: `${project.name}.${ext}`,
@@ -60,7 +108,7 @@ export function ExportDialog() {
               Format
             </label>
             <div className="flex gap-1">
-              {(["Mp4", "WebM"] as ExportFormat[]).map((f) => (
+              {(["Mp4", "Mkv", "WebM"] as ExportFormat[]).map((f) => (
                 <button
                   key={f}
                   onClick={() => setFormat(f)}
@@ -83,6 +131,7 @@ export function ExportDialog() {
               {project.settings.width} x {project.settings.height}
             </div>
           </div>
+          <HardwarePanel hardware={hardware} />
           <div className="flex justify-end gap-2 pt-2">
             <button
               onClick={() => setShow(false)}

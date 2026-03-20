@@ -1,6 +1,7 @@
 import type { Clip } from "../../types";
 import { useProjectStore } from "../../stores/projectStore";
 import { EffectList } from "./EffectList";
+import { LoudnessMeter } from "./LoudnessMeter";
 
 interface ClipInspectorProps {
   clip: Clip;
@@ -99,6 +100,9 @@ export function ClipInspector({ clip, trackId }: ClipInspectorProps) {
             className="w-full"
           />
         </div>
+        {clip.media?.path && (clip.kind === "Audio" || clip.kind === "Video") && (
+          <LoudnessMeter mediaPath={clip.media.path} />
+        )}
         <EffectList clip={clip} trackId={trackId} />
       </div>
     </div>

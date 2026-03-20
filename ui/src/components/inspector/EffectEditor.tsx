@@ -71,5 +71,90 @@ export function EffectEditor({ effect }: EffectEditorProps) {
     );
   }
 
+  if ("Eq" in kind) {
+    const { low_gain_db, mid_gain_db, high_gain_db } = kind.Eq;
+    return (
+      <div className="space-y-1 text-[10px]" style={{ color: "var(--text-secondary)" }}>
+        <div>Low: {low_gain_db.toFixed(1)} dB</div>
+        <div>Mid: {mid_gain_db.toFixed(1)} dB</div>
+        <div>High: {high_gain_db.toFixed(1)} dB</div>
+      </div>
+    );
+  }
+
+  if ("Compressor" in kind) {
+    const { threshold_db, ratio, attack_ms, release_ms } = kind.Compressor;
+    return (
+      <div className="space-y-1 text-[10px]" style={{ color: "var(--text-secondary)" }}>
+        <div>Threshold: {threshold_db.toFixed(1)} dB</div>
+        <div>Ratio: {ratio.toFixed(1)}:1</div>
+        <div>Attack: {attack_ms.toFixed(0)} ms</div>
+        <div>Release: {release_ms.toFixed(0)} ms</div>
+      </div>
+    );
+  }
+
+  if ("NoiseReduction" in kind) {
+    return (
+      <div className="text-[10px]" style={{ color: "var(--text-secondary)" }}>
+        Strength: {(kind.NoiseReduction.strength * 100).toFixed(0)}%
+      </div>
+    );
+  }
+
+  if ("Reverb" in kind) {
+    const { room_size, damping, wet } = kind.Reverb;
+    return (
+      <div className="space-y-1 text-[10px]" style={{ color: "var(--text-secondary)" }}>
+        <div>Room: {(room_size * 100).toFixed(0)}%</div>
+        <div>Damping: {(damping * 100).toFixed(0)}%</div>
+        <div>Wet: {(wet * 100).toFixed(0)}%</div>
+      </div>
+    );
+  }
+
+  if ("LoudnessNormalize" in kind) {
+    return (
+      <div className="text-[10px]" style={{ color: "var(--text-secondary)" }}>
+        Target: {kind.LoudnessNormalize.target_lufs.toFixed(1)} LUFS
+      </div>
+    );
+  }
+
+  if ("Transform" in kind) {
+    const { scale_x, scale_y, translate_x, translate_y } = kind.Transform;
+    return (
+      <div className="space-y-1 text-[10px]" style={{ color: "var(--text-secondary)" }}>
+        <div>Scale: {scale_x.toFixed(2)} x {scale_y.toFixed(2)}</div>
+        <div>Position: {translate_x.toFixed(0)}, {translate_y.toFixed(0)}</div>
+      </div>
+    );
+  }
+
+  if ("Lut" in kind) {
+    return (
+      <div className="text-[10px] truncate" style={{ color: "var(--text-secondary)" }}>
+        LUT: {kind.Lut.lut_path.split("/").pop() ?? kind.Lut.lut_path}
+      </div>
+    );
+  }
+
+  if ("Text" in kind) {
+    return (
+      <div className="space-y-1 text-[10px]" style={{ color: "var(--text-secondary)" }}>
+        <div className="truncate">"{kind.Text.content}"</div>
+        <div>{kind.Text.font_family} {kind.Text.font_size}pt</div>
+      </div>
+    );
+  }
+
+  if ("Plugin" in kind) {
+    return (
+      <div className="text-[10px]" style={{ color: "var(--text-secondary)" }}>
+        Plugin: {kind.Plugin.plugin_id}
+      </div>
+    );
+  }
+
   return null;
 }
