@@ -504,6 +504,110 @@ pub async fn suggest_transitions(
 }
 
 #[tauri::command]
+pub async fn describe_clip(
+    path: String,
+    language_hint: Option<String>,
+) -> Result<tazama_media::ai::ClipDescription, String> {
+    tazama_media::init().map_err(|e| e.to_string())?;
+
+    // First transcribe
+    let path_buf = std::path::PathBuf::from(&path);
+    let mut rx = tazama_media::decode::audio::AudioDecoder::decode(&path_buf)
+        .map_err(|e| e.to_string())?;
+
+    let mut all_samples = Vec::new();
+    let mut sample_rate = 48000u32;
+    let mut channels = 2u16;
+    while let Some(buf) = rx.recv().await {
+        sample_rate = buf.sample_rate;
+        channels = buf.channels;
+        all_samples.extend_from_slice(&buf.samples);
+    }
+
+    let duration_ms = if sample_rate > 0 && channels > 0 {
+        (all_samples.len() as u64 * 1000) / (sample_rate as u64 * channels as u64)
+    } else {
+        0
+    };
+
+    // Try to get transcription for context
+    let cues = if !all_samples.is_empty() {
+        let byte_data: Vec<u8> = all_samples.iter().flat_map(|s| s.to_le_bytes()).collect();
+        let num_frames = all_samples.len() / channels.max(1) as usize;
+        let tarang_buf = tarang::core::AudioBuffer {
+            data: bytes::Bytes::from(byte_data),
+            sample_format: tarang::core::SampleFormat::F32,
+            channels,
+            sample_rate,
+            num_frames,
+            timestamp: std::time::Duration::ZERO,
+        };
+        let prepared = tarang::ai::prepare_audio_for_transcription(&tarang_buf);
+        let dur_secs = prepared.num_frames as f64 / prepared.sample_rate as f64;
+        let request = tarang::ai::TranscriptionRequest {
+            audio_codec: "pcm_f32le".to_string(),
+            sample_rate: prepared.sample_rate,
+            channels: prepared.channels,
+            duration_secs: dur_secs,
+            language_hint,
+        };
+        let hoosh_config = tarang::ai::HooshConfig {
+            endpoint: std::env::var("HOOSH_ENDPOINT")
+                .unwrap_or_else(|_| "http://localhost:8088".to_string()),
+            api_key: std::env::var("HOOSH_API_KEY").ok(),
+            model: tarang::ai::WhisperModel::Base,
+            timeout: std::time::Duration::from_secs(120),
+            max_wav_bytes: 50 * 1024 * 1024,
+            chunk_duration_secs: 30.0,
+        };
+        let client = tarang::ai::HooshClient::new(hoosh_config)
+            .map_err(|e| e.to_string())?;
+        match client.transcribe(&request, &prepared).await {
+            Ok(result) => result
+                .segments
+                .iter()
+                .enumerate()
+                .map(|(i, seg)| tazama_media::ai::SubtitleCue {
+                    index: i + 1,
+                    start_ms: (seg.start * 1000.0) as u64,
+                    end_ms: (seg.end * 1000.0) as u64,
+                    text: seg.text.clone(),
+                })
+                .collect(),
+            Err(_) => vec![],
+        }
+    } else {
+        vec![]
+    };
+
+    let llm_config = tazama_media::ai::LlmConfig::default();
+    tazama_media::ai::describe_clip(&llm_config, &cues, duration_ms, true)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn refine_subtitles(
+    cues: Vec<tazama_media::ai::SubtitleCue>,
+) -> Result<Vec<tazama_media::ai::SubtitleCue>, String> {
+    let config = tazama_media::ai::LlmConfig::default();
+    tazama_media::ai::refine_subtitles(&config, &cues)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn translate_subtitles(
+    cues: Vec<tazama_media::ai::SubtitleCue>,
+    target_language: String,
+) -> Result<Vec<tazama_media::ai::SubtitleCue>, String> {
+    let config = tazama_media::ai::LlmConfig::default();
+    tazama_media::ai::translate_subtitles(&config, &cues, &target_language)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn detect_hardware() -> Result<serde_json::Value, String> {
     let hardware = tazama_media::hwaccel::hardware_summary();
     let encoders = tazama_media::available_encoders();

@@ -29,6 +29,9 @@ Tazama is an AI-native non-linear video editor.
 - [x] Subtitle generation — hoosh/Whisper transcription → timed cues, SRT/VTT formatters
 - [x] AI color grading — luminance histogram analysis → auto brightness/contrast/saturation correction
 - [x] Smart transitions — scene boundary type + change score → Cut/Dissolve/Fade suggestions
+- [x] LLM clip description — transcribe + summarize via hoosh chat completions
+- [x] Subtitle refinement — LLM removes fillers, fixes grammar
+- [x] Subtitle translation — LLM translates to target language
 
 ### AI Features (Tier 2)
 - [ ] AI voiceover / TTS (generate voiceover from text, multiple voices)

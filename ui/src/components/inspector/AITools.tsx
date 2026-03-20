@@ -16,6 +16,7 @@ export function AITools({ clip, trackId }: AIToolsProps) {
   const [highlights, setHighlights] = useState<commands.Highlight[] | null>(null);
   const [subtitles, setSubtitles] = useState<commands.SubtitleCue[] | null>(null);
   const [transitions, setTransitions] = useState<[number, commands.TransitionSuggestion][] | null>(null);
+  const [description, setDescription] = useState<commands.ClipDescription | null>(null);
 
   const mediaPath = clip.media?.path;
   if (!mediaPath) return null;
@@ -94,6 +95,46 @@ export function AITools({ clip, trackId }: AIToolsProps) {
     }
   };
 
+  const handleDescribe = async () => {
+    setLoading("describe");
+    try {
+      const result = await commands.describeClip(mediaPath);
+      setDescription(result);
+    } catch (e) {
+      showToast(String(e), "error");
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const handleRefineSubtitles = async () => {
+    if (!subtitles || subtitles.length === 0) return;
+    setLoading("refine");
+    try {
+      const refined = await commands.refineSubtitles(subtitles);
+      setSubtitles(refined);
+      showToast("Subtitles refined", "success");
+    } catch (e) {
+      showToast(String(e), "error");
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const handleTranslateSubtitles = async () => {
+    if (!subtitles || subtitles.length === 0) return;
+    setLoading("translate");
+    try {
+      const translated = await commands.translateSubtitles(subtitles, "Spanish");
+      setSubtitles(translated);
+      showToast("Subtitles translated", "success");
+    } catch (e) {
+      showToast(String(e), "error");
+    } finally {
+      setLoading(null);
+    }
+  };
+
   const formatTime = (ms: number) => {
     const s = Math.floor(ms / 1000);
     const m = Math.floor(s / 60);
@@ -131,6 +172,12 @@ export function AITools({ clip, trackId }: AIToolsProps) {
           disabled={loading !== null}
           onClick={handleSuggestTransitions}
         />
+        <AIButton
+          label="Describe"
+          loading={loading === "describe"}
+          disabled={loading !== null}
+          onClick={handleDescribe}
+        />
       </div>
 
       {/* Highlights results */}
@@ -148,12 +195,53 @@ export function AITools({ clip, trackId }: AIToolsProps) {
         </div>
       )}
 
+      {/* Description result */}
+      {description && (
+        <div className="mt-1.5">
+          <span className="text-[9px]" style={{ color: "var(--text-muted)" }}>Description:</span>
+          <div className="text-[9px] ml-1" style={{ color: "var(--text-secondary)" }}>
+            {description.summary}
+          </div>
+          {description.tags.length > 0 && (
+            <div className="flex flex-wrap gap-0.5 ml-1 mt-0.5">
+              {description.tags.map((tag, i) => (
+                <span
+                  key={i}
+                  className="text-[8px] px-1 rounded"
+                  style={{ background: "var(--bg-hover)", color: "var(--text-muted)" }}
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Subtitle results */}
       {subtitles && subtitles.length > 0 && (
         <div className="mt-1.5 max-h-[120px] overflow-y-auto">
-          <span className="text-[9px]" style={{ color: "var(--text-muted)" }}>
-            Subtitles ({subtitles.length} cues):
-          </span>
+          <div className="flex items-center gap-1 mb-0.5">
+            <span className="text-[9px]" style={{ color: "var(--text-muted)" }}>
+              Subtitles ({subtitles.length} cues):
+            </span>
+            <button
+              onClick={handleRefineSubtitles}
+              disabled={loading !== null}
+              className="text-[8px] px-1 rounded"
+              style={{ background: "var(--bg-hover)", color: "var(--text-accent)", opacity: loading ? 0.5 : 1 }}
+            >
+              {loading === "refine" ? "..." : "Refine"}
+            </button>
+            <button
+              onClick={handleTranslateSubtitles}
+              disabled={loading !== null}
+              className="text-[8px] px-1 rounded"
+              style={{ background: "var(--bg-hover)", color: "var(--text-accent)", opacity: loading ? 0.5 : 1 }}
+            >
+              {loading === "translate" ? "..." : "Translate"}
+            </button>
+          </div>
           {subtitles.map((cue) => (
             <div key={cue.index} className="text-[9px] ml-1" style={{ color: "var(--text-secondary)" }}>
               <span style={{ color: "var(--text-muted)" }}>{formatTime(cue.start_ms)}</span>{" "}

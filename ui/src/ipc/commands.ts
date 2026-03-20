@@ -167,6 +167,31 @@ export async function suggestTransitions(
   return invoke<[number, TransitionSuggestion][]>("suggest_transitions", { path, fps });
 }
 
+export interface ClipDescription {
+  summary: string;
+  tags: string[];
+}
+
+export async function describeClip(
+  path: string,
+  languageHint?: string,
+): Promise<ClipDescription> {
+  return invoke<ClipDescription>("describe_clip", { path, languageHint });
+}
+
+export async function refineSubtitles(
+  cues: SubtitleCue[],
+): Promise<SubtitleCue[]> {
+  return invoke<SubtitleCue[]>("refine_subtitles", { cues });
+}
+
+export async function translateSubtitles(
+  cues: SubtitleCue[],
+  targetLanguage: string,
+): Promise<SubtitleCue[]> {
+  return invoke<SubtitleCue[]>("translate_subtitles", { cues, targetLanguage });
+}
+
 // Waveform extraction
 export async function extractWaveform(
   path: string,

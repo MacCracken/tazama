@@ -121,15 +121,31 @@
 - UI displays suggestions with timestamps, types, durations, and explanations
 
 #### AI Tools UI
-- `AITools` component in ClipInspector — four buttons: Auto Color, Highlights, Transcribe, Transitions
+- `AITools` component in ClipInspector — five buttons: Auto Color, Highlights, Transcribe, Transitions, Describe
 - Results displayed inline with formatted timestamps and scores
 - Loading states prevent concurrent operations
+
+#### LLM-Powered Features (via hoosh)
+- `describe_clip` — transcribes audio then asks LLM for summary + tags
+- `refine_subtitles` — LLM cleans up Whisper output (remove fillers, fix grammar)
+- `translate_subtitles` — LLM translates subtitle cues to target language
+- `LlmConfig` with `HOOSH_ENDPOINT` / `HOOSH_MODEL` env var configuration
+- Subtitle results panel now has "Refine" and "Translate" action buttons
+
+### Benchmarks (new_features suite)
+- **Pixel conversion**: RGBA→YUV 1080p 15.3 ms, YUV→RGB 1080p 4.8 ms
+- **Loudness**: measure 1s stereo 78 µs, normalize 133 µs (4x faster than EQ filter)
+- **Waveform**: extract 5s 1.3 ms (decode-dominated, peaks-per-second negligible)
+- **AI color correct**: 1080p histogram analysis 1.4 ms
+- **AI content score**: 1080p saliency 17.9 ms (edge + color + skin tone heuristics)
+- **Video scale**: 1080p→720p bilinear 35.5 ms, Lanczos3 55.7 ms, thumbnail 128x72 8.3 ms
+- DSP reference: EQ 308 µs, compressor 454 µs, noise reduction 1.5 ms, reverb 869 µs
 
 ### Backend
 - `extract_waveform` Tauri command registered
 - `generate_thumbnails` Tauri command with base64-encoded thumbnail results
 - `measure_loudness` Tauri command (decodes all audio, returns integrated LUFS)
-- 555 tests passing (was 529)
+- 565 tests passing (was 529)
 
 ## 2026.3.19
 
