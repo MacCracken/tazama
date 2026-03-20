@@ -84,6 +84,24 @@
 - **Proxy input validation** — Early rejection for audio-only (wav/mp3/flac/ogg/m4a/aac) and image (png/jpg/gif/bmp/tiff/svg) files with clear error
 - **cosmic-text caching** — `FontSystem` cached via `LazyLock<Mutex<>>` (was creating new instance per frame render)
 
+### GPU Integration Tests
+- 8 integration tests on real Vulkan hardware (context, pipeline, renderer, buffer roundtrip, empty timeline, color grade, crop, frame size)
+- `require_gpu!()` macro gracefully skips tests when no Vulkan device available (CI)
+- CI installs `mesa-vulkan-drivers` (lavapipe) and sets `VK_ICD_FILENAMES` for software Vulkan
+
+### App Command Tests
+- 13 integration tests covering 13/17 Tauri IPC handlers (project CRUD, media import/probe, autosave recovery, recording, proxy, hardware detection)
+
+### Tarang vs GStreamer Video Benchmarks
+- Video probe: **18-20× faster** (158–179 µs vs 3.1–3.4 ms) across MP4/WebM/MKV
+- Video decode (10 frames H.264): **32.6× faster** (175 µs vs 5.7 ms)
+- Test fixtures generated via `scripts/generate-test-fixtures.sh` (ffmpeg)
+
+### CI & Build Fixes
+- Added tarang codec dependencies (dav1d, libvpx, openh264, opus, fdk-aac) to CI action, Dockerfile, and testing docs
+- Removed stale `create-tarang-stubs.sh` step from CI (tarang is now on crates.io)
+- Lavapipe software Vulkan configured for CI GPU tests
+
 ### Version Sync
 - All version references bumped to `2026.3.19` (VERSION, Cargo.toml, tauri.conf.json, package.json, marketplace recipe, agent manifest)
 - Marketplace recipe and agent manifest synced (were stale at `2026.3.15`)
