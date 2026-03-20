@@ -102,6 +102,9 @@ cargo test --workspace
 cargo test -p tazama-core
 cargo test -p tazama-media
 
+# GPU integration tests (requires Vulkan — AMD Radeon Vega via RADV on dev machine)
+cargo test -p tazama-gpu
+
 # With tarang feature
 cargo test -p tazama-media --features tarang
 
@@ -114,6 +117,18 @@ cargo clippy --workspace --all-targets -- -D warnings
 # Benchmarks
 cargo bench --workspace
 ```
+
+### GPU Integration Tests
+
+The `tazama-gpu` crate includes integration tests in `crates/gpu/tests/gpu_integration.rs`
+that create real Vulkan contexts and dispatch compute shaders on the GPU. These tests
+require a Vulkan-capable device and driver. On the reference development machine they
+run against the AMD Radeon Vega (Cezanne) integrated GPU using the RADV Mesa driver
+(Vulkan 1.4).
+
+Tests covered: context creation, pipeline cache compilation (8 shaders), renderer
+creation, GPU buffer write/read roundtrip, empty timeline rendering, color grade
+effect, crop effect, and frame buffer size calculations.
 
 ## CI Requirements
 
