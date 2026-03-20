@@ -10,7 +10,6 @@ use super::AudioBuffer;
 use crate::error::MediaPipelineError;
 
 /// Audio-only file extensions handled by tarang when the feature is enabled.
-#[cfg(feature = "tarang")]
 const AUDIO_EXTENSIONS: &[&str] = &["wav", "mp3", "flac", "ogg", "m4a", "aac"];
 
 /// RAII guard that sets a GStreamer pipeline to Null on drop.
@@ -32,7 +31,6 @@ impl AudioDecoder {
         let (tx, rx) = mpsc::channel(64);
 
         task::spawn_blocking(move || {
-            #[cfg(feature = "tarang")]
             if is_audio_file(&path) {
                 if let Err(e) = decode_tarang(&path, tx) {
                     error!("tarang audio decode error: {e}");
@@ -159,7 +157,6 @@ fn decode_audio(path: &Path, tx: mpsc::Sender<AudioBuffer>) -> Result<(), MediaP
     Ok(())
 }
 
-#[cfg(feature = "tarang")]
 fn is_audio_file(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
@@ -167,7 +164,6 @@ fn is_audio_file(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-#[cfg(feature = "tarang")]
 fn decode_tarang(path: &Path, tx: mpsc::Sender<AudioBuffer>) -> Result<(), MediaPipelineError> {
     use symphonia::core::audio::SampleBuffer;
     use symphonia::core::codecs::DecoderOptions;

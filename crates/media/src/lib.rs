@@ -10,7 +10,6 @@ pub mod record;
 pub mod thumbnail;
 pub mod waveform;
 
-#[cfg(feature = "tarang")]
 mod convert;
 
 #[cfg(feature = "plugins")]

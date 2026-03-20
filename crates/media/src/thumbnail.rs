@@ -8,7 +8,6 @@ use crate::error::MediaPipelineError;
 use crate::probe;
 
 /// Video file extensions handled by tarang when the feature is enabled.
-#[cfg(feature = "tarang")]
 const TARANG_VIDEO_EXTENSIONS: &[&str] = &["mp4", "m4v", "mkv", "webm"];
 
 /// Generate thumbnails from a media file at regular intervals.
@@ -18,7 +17,6 @@ pub async fn generate_thumbnails(
     path: &Path,
     spec: ThumbnailSpec,
 ) -> Result<Vec<(u64, Bytes)>, MediaPipelineError> {
-    #[cfg(feature = "tarang")]
     if is_tarang_video(path) {
         match generate_thumbnails_tarang(path, spec).await {
             Ok(thumbs) => return Ok(thumbs),
@@ -70,7 +68,6 @@ async fn generate_thumbnails_gst(
     Ok(thumbnails)
 }
 
-#[cfg(feature = "tarang")]
 fn is_tarang_video(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
@@ -83,19 +80,16 @@ fn is_tarang_video(path: &Path) -> bool {
 /// Demuxes + decodes frames at regular intervals, feeds them through a
 /// `SceneDetector` to find boundaries, and picks frames near scene changes
 /// plus high-variance frames.
-#[cfg(feature = "tarang")]
 async fn generate_thumbnails_tarang(
     path: &Path,
     spec: ThumbnailSpec,
 ) -> Result<Vec<(u64, Bytes)>, MediaPipelineError> {
     let path = path.to_path_buf();
-    let result = tokio::task::spawn_blocking(move || generate_thumbnails_tarang_sync(&path, spec))
+    tokio::task::spawn_blocking(move || generate_thumbnails_tarang_sync(&path, spec))
         .await
-        .map_err(|e| MediaPipelineError::Decode(e.to_string()))?;
-    result
+        .map_err(|e| MediaPipelineError::Decode(e.to_string()))?
 }
 
-#[cfg(feature = "tarang")]
 fn generate_thumbnails_tarang_sync(
     path: &Path,
     spec: ThumbnailSpec,
@@ -135,39 +129,29 @@ fn generate_thumbnails_tarang_sync(
 
         decoder.send_packet(&packet.data, packet.timestamp)?;
 
-        loop {
-            match decoder.receive_frame() {
-                Ok(tarang_frame) => {
-                    let ts_ns = tarang_frame.timestamp.as_nanos() as u64;
-                    let is_boundary = scene_detector.feed_frame(&tarang_frame).is_some();
+        while let Ok(tarang_frame) = decoder.receive_frame() {
+            let ts_ns = tarang_frame.timestamp.as_nanos() as u64;
+            let is_boundary = scene_detector.feed_frame(&tarang_frame).is_some();
 
-                    if ts_ns >= next_sample_ns {
-                        candidate_frames.push((frame_index, tarang_frame, is_boundary));
-                        next_sample_ns = ts_ns + interval_ns;
-                    }
-
-                    frame_index += 1;
-                }
-                Err(_) => break,
+            if ts_ns >= next_sample_ns {
+                candidate_frames.push((frame_index, tarang_frame, is_boundary));
+                next_sample_ns = ts_ns + interval_ns;
             }
+
+            frame_index += 1;
         }
     }
 
     // Flush decoder
     let _ = decoder.flush();
-    loop {
-        match decoder.receive_frame() {
-            Ok(tarang_frame) => {
-                let ts_ns = tarang_frame.timestamp.as_nanos() as u64;
-                let is_boundary = scene_detector.feed_frame(&tarang_frame).is_some();
-                if ts_ns >= next_sample_ns {
-                    candidate_frames.push((frame_index, tarang_frame, is_boundary));
-                    next_sample_ns = ts_ns + interval_ns;
-                }
-                frame_index += 1;
-            }
-            Err(_) => break,
+    while let Ok(tarang_frame) = decoder.receive_frame() {
+        let ts_ns = tarang_frame.timestamp.as_nanos() as u64;
+        let is_boundary = scene_detector.feed_frame(&tarang_frame).is_some();
+        if ts_ns >= next_sample_ns {
+            candidate_frames.push((frame_index, tarang_frame, is_boundary));
+            next_sample_ns = ts_ns + interval_ns;
         }
+        frame_index += 1;
     }
 
     let _boundaries = scene_detector.finish();
@@ -190,7 +174,6 @@ fn generate_thumbnails_tarang_sync(
     Ok(thumbnails)
 }
 
-#[cfg(feature = "tarang")]
 fn create_demuxer(path: &Path) -> Result<Box<dyn tarang::demux::Demuxer>, MediaPipelineError> {
     use std::io::Read;
 
@@ -216,7 +199,6 @@ fn create_demuxer(path: &Path) -> Result<Box<dyn tarang::demux::Demuxer>, MediaP
     Ok(demuxer)
 }
 
-#[cfg(feature = "tarang")]
 fn find_video_stream(info: &tarang::core::MediaInfo) -> Option<(usize, tarang::core::VideoCodec)> {
     for (idx, stream) in info.streams.iter().enumerate() {
         if let tarang::core::StreamInfo::Video(vs) = stream {
@@ -367,7 +349,6 @@ mod tests {
         assert!(result.is_err(), "expected error when path is a directory");
     }
 
-    #[cfg(feature = "tarang")]
     mod tarang_tests {
         use super::*;
 

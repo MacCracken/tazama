@@ -12,6 +12,12 @@
   - Added to both `tazama-media` and `tazama-gpu` — always-on, OS-agnostic, best-effort detection
   - Zero vendor SDK compile-time dependencies
 
+### Tarang Default Pipeline
+- **Tarang is now always-on** — removed `tarang` feature flag, tarang + symphonia are non-optional dependencies
+- Removed 43 `#[cfg(feature = "tarang")]` gates across 8 source files
+- Tarang handles probe, decode, and thumbnails as primary path; GStreamer falls back for unsupported formats
+- Benchmarks confirmed: audio probe 15.4× faster, audio decode 3.96× faster than GStreamer
+
 ### Test Coverage (529 tests, 48.3% line coverage)
 - **Waveform** — struct construction, error paths (5 tests)
 - **Thumbnail** — spec tests, tarang extension helpers, nonexistent file error (13 tests)

@@ -1,8 +1,5 @@
-#[cfg(feature = "tarang")]
 use super::{ExportAudioCodec, ExportConfig};
-#[cfg(feature = "tarang")]
 use crate::decode::{AudioBuffer, VideoFrame};
-#[cfg(feature = "tarang")]
 use crate::error::MediaPipelineError;
 
 /// Export pipeline backed by tarang encoders and muxer.
@@ -12,10 +9,8 @@ use crate::error::MediaPipelineError;
 ///
 /// **Status:** audio codec selection is wired (FLAC via tarang-audio, AAC/Opus
 /// via GStreamer fallback).  Full tarang video encode is pending.
-#[cfg(feature = "tarang")]
 pub struct TarangExportPipeline;
 
-#[cfg(feature = "tarang")]
 impl TarangExportPipeline {
     pub fn run(
         config: ExportConfig,

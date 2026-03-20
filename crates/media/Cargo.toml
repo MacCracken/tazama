@@ -19,14 +19,13 @@ thiserror.workspace = true
 tracing.workspace = true
 cpal.workspace = true
 rustfft = "6"
-tarang = { version = "0.19.3", features = ["openh264", "vpx", "dav1d"], optional = true }
-symphonia = { version = "0.5", features = ["all"], optional = true }
+tarang = { version = "0.19.3", features = ["openh264", "vpx", "dav1d"] }
+symphonia = { version = "0.5", features = ["all"] }
 ai-hwaccel.workspace = true
 wasmtime = { version = "29", optional = true }
 
 [features]
 default = []
-tarang = ["dep:tarang", "dep:symphonia"]
 plugins = ["dep:wasmtime"]
 
 [dev-dependencies]
@@ -36,4 +35,8 @@ criterion.workspace = true
 
 [[bench]]
 name = "dsp"
+harness = false
+
+[[bench]]
+name = "tarang_vs_gstreamer"
 harness = false

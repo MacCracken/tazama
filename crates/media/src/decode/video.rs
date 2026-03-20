@@ -11,10 +11,8 @@ use super::{DecoderConfig, FrameRange, VideoFrame};
 use crate::error::MediaPipelineError;
 
 /// Video file extensions handled by tarang when the feature is enabled.
-#[cfg(feature = "tarang")]
 const TARANG_VIDEO_EXTENSIONS: &[&str] = &["mp4", "m4v", "mkv", "webm"];
 
-#[cfg(feature = "tarang")]
 fn is_tarang_video(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
@@ -50,7 +48,6 @@ impl VideoDecoder {
         let (tx, rx) = mpsc::channel(16);
 
         task::spawn_blocking(move || {
-            #[cfg(feature = "tarang")]
             if is_tarang_video(&path) {
                 if let Err(e) = decode_tarang_video(&path, range, tx.clone()) {
                     error!("tarang video decode error: {e}");
@@ -74,7 +71,6 @@ impl VideoDecoder {
     ) -> Result<VideoFrame, MediaPipelineError> {
         let path = path.to_path_buf();
         task::spawn_blocking(move || {
-            #[cfg(feature = "tarang")]
             if is_tarang_video(&path) {
                 return decode_tarang_single_frame(&path, frame_index, frame_rate);
             }
@@ -247,7 +243,6 @@ fn decode_single_frame(
     Ok(frame)
 }
 
-#[cfg(feature = "tarang")]
 fn create_tarang_demuxer(
     path: &Path,
 ) -> Result<Box<dyn tarang::demux::Demuxer>, MediaPipelineError> {
@@ -275,7 +270,6 @@ fn create_tarang_demuxer(
     Ok(demuxer)
 }
 
-#[cfg(feature = "tarang")]
 fn create_tarang_decoder(
     codec: tarang::core::VideoCodec,
 ) -> Result<tarang::video::VideoDecoder, MediaPipelineError> {
@@ -285,7 +279,6 @@ fn create_tarang_decoder(
 }
 
 /// Find the first video stream index and its codec from tarang MediaInfo.
-#[cfg(feature = "tarang")]
 fn find_video_stream(info: &tarang::core::MediaInfo) -> Option<(usize, tarang::core::VideoCodec)> {
     for (idx, stream) in info.streams.iter().enumerate() {
         if let tarang::core::StreamInfo::Video(vs) = stream {
@@ -295,7 +288,6 @@ fn find_video_stream(info: &tarang::core::MediaInfo) -> Option<(usize, tarang::c
     None
 }
 
-#[cfg(feature = "tarang")]
 fn decode_tarang_video(
     path: &Path,
     range: FrameRange,
@@ -340,50 +332,39 @@ fn decode_tarang_video(
         decoder.send_packet(&packet.data, packet.timestamp)?;
 
         // Drain all available frames from the decoder
-        loop {
-            match decoder.receive_frame() {
-                Ok(tarang_frame) => {
-                    if frame_index >= range.start {
-                        let frame =
-                            crate::convert::tarang_frame_to_tazama(&tarang_frame, frame_index)?;
-                        if tx.blocking_send(frame).is_err() {
-                            debug!("tarang video decode receiver dropped");
-                            return Ok(());
-                        }
-                    }
-                    frame_index += 1;
-                    if frame_index > range.end {
-                        return Ok(());
-                    }
+        while let Ok(tarang_frame) = decoder.receive_frame() {
+            if frame_index >= range.start {
+                let frame =
+                    crate::convert::tarang_frame_to_tazama(&tarang_frame, frame_index)?;
+                if tx.blocking_send(frame).is_err() {
+                    debug!("tarang video decode receiver dropped");
+                    return Ok(());
                 }
-                Err(_) => break, // No more frames available, need more packets
+            }
+            frame_index += 1;
+            if frame_index > range.end {
+                return Ok(());
             }
         }
     }
 
     // Flush remaining frames
     if let Ok(()) = decoder.flush() {
-        loop {
-            match decoder.receive_frame() {
-                Ok(tarang_frame) => {
-                    if frame_index >= range.start && frame_index <= range.end {
-                        let frame =
-                            crate::convert::tarang_frame_to_tazama(&tarang_frame, frame_index)?;
-                        if tx.blocking_send(frame).is_err() {
-                            break;
-                        }
-                    }
-                    frame_index += 1;
+        while let Ok(tarang_frame) = decoder.receive_frame() {
+            if frame_index >= range.start && frame_index <= range.end {
+                let frame =
+                    crate::convert::tarang_frame_to_tazama(&tarang_frame, frame_index)?;
+                if tx.blocking_send(frame).is_err() {
+                    break;
                 }
-                Err(_) => break,
             }
+            frame_index += 1;
         }
     }
 
     Ok(())
 }
 
-#[cfg(feature = "tarang")]
 fn decode_tarang_single_frame(
     path: &Path,
     frame_index: u64,

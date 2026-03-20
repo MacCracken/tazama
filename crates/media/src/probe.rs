@@ -8,11 +8,9 @@ use tokio::task;
 use crate::error::MediaPipelineError;
 
 /// Audio-only file extensions handled by tarang when the feature is enabled.
-#[cfg(feature = "tarang")]
 const AUDIO_EXTENSIONS: &[&str] = &["wav", "mp3", "flac", "ogg", "m4a", "aac"];
 
 /// Video file extensions handled by tarang demux when the feature is enabled.
-#[cfg(feature = "tarang")]
 const VIDEO_EXTENSIONS: &[&str] = &["mp4", "m4v", "mkv", "webm"];
 
 /// Probe a media file and extract its metadata.
@@ -28,7 +26,6 @@ fn probe_sync(path: &Path) -> Result<MediaInfo, MediaPipelineError> {
         return Err(MediaPipelineError::FileNotFound(path.display().to_string()));
     }
 
-    #[cfg(feature = "tarang")]
     if is_video_file(path) {
         match probe_tarang_video(path) {
             Ok(info) => return Ok(info),
@@ -38,7 +35,6 @@ fn probe_sync(path: &Path) -> Result<MediaInfo, MediaPipelineError> {
         }
     }
 
-    #[cfg(feature = "tarang")]
     if is_audio_file(path) {
         return probe_tarang(path);
     }
@@ -126,7 +122,6 @@ fn probe_sync(path: &Path) -> Result<MediaInfo, MediaPipelineError> {
     })
 }
 
-#[cfg(feature = "tarang")]
 fn is_audio_file(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
@@ -134,7 +129,6 @@ fn is_audio_file(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-#[cfg(feature = "tarang")]
 fn probe_tarang(path: &Path) -> Result<MediaInfo, MediaPipelineError> {
     let file = std::fs::File::open(path)?;
     let info = tarang::audio::probe_audio(file)?;
@@ -145,7 +139,6 @@ fn probe_tarang(path: &Path) -> Result<MediaInfo, MediaPipelineError> {
 
     let audio_streams = info
         .audio_streams()
-        .into_iter()
         .map(|s| AudioStreamInfo {
             codec: map_tarang_audio_codec(s.codec),
             sample_rate: s.sample_rate,
@@ -164,7 +157,6 @@ fn probe_tarang(path: &Path) -> Result<MediaInfo, MediaPipelineError> {
     })
 }
 
-#[cfg(feature = "tarang")]
 fn is_video_file(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
@@ -172,7 +164,6 @@ fn is_video_file(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-#[cfg(feature = "tarang")]
 fn probe_tarang_video(path: &Path) -> Result<MediaInfo, MediaPipelineError> {
     use std::io::Read;
     use tarang::demux::Demuxer;
@@ -264,7 +255,6 @@ fn probe_tarang_video(path: &Path) -> Result<MediaInfo, MediaPipelineError> {
     })
 }
 
-#[cfg(feature = "tarang")]
 fn map_tarang_video_codec(codec: tarang::core::VideoCodec) -> Codec {
     match codec {
         tarang::core::VideoCodec::H264 => Codec::H264,
@@ -276,7 +266,6 @@ fn map_tarang_video_codec(codec: tarang::core::VideoCodec) -> Codec {
 }
 
 /// Convert an f64 frame rate to a (numerator, denominator) rational approximation.
-#[cfg(feature = "tarang")]
 fn f64_to_rational(fps: f64) -> (u32, u32) {
     if fps <= 0.0 {
         return (0, 1);
@@ -304,7 +293,6 @@ fn f64_to_rational(fps: f64) -> (u32, u32) {
     (num / g, den / g)
 }
 
-#[cfg(feature = "tarang")]
 fn gcd(mut a: u32, mut b: u32) -> u32 {
     while b != 0 {
         let t = b;
@@ -314,7 +302,6 @@ fn gcd(mut a: u32, mut b: u32) -> u32 {
     a
 }
 
-#[cfg(feature = "tarang")]
 fn map_tarang_audio_codec(codec: tarang::core::AudioCodec) -> Codec {
     match codec {
         tarang::core::AudioCodec::Aac => Codec::Aac,
@@ -1019,7 +1006,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    #[cfg(feature = "tarang")]
     mod tarang_tests {
         use super::*;
 
@@ -1187,7 +1173,7 @@ mod tests {
                     // Tarang successfully probed the WAV
                     assert!(info.file_size > 0);
                     assert_eq!(info.video_streams.len(), 0);
-                    assert!(info.audio_streams.len() > 0);
+                    assert!(!info.audio_streams.is_empty());
                     assert_eq!(info.duration_frames, 0); // audio-only → 0 frames
                 }
                 Err(e) => {

@@ -1,5 +1,4 @@
 pub mod pipeline;
-#[cfg(feature = "tarang")]
 pub mod tarang_pipeline;
 
 use serde::{Deserialize, Serialize};
@@ -84,11 +83,8 @@ pub fn available_encoders() -> Vec<ExportEncoder> {
         info!("NVENC encoder not found");
     }
 
-    #[cfg(feature = "tarang")]
-    {
-        encoders.push(ExportEncoder::Tarang);
-        info!("Tarang encoder available (feature enabled)");
-    }
+    encoders.push(ExportEncoder::Tarang);
+    info!("Tarang encoder available (feature enabled)");
 
     // Auto is always valid since it falls back to software
     encoders.push(ExportEncoder::Auto);

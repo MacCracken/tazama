@@ -71,9 +71,19 @@ cargo bench -p tazama-core --bench keyframe -- "keyframe_evaluate/100"
 
 HTML reports are generated in `target/criterion/` (excluded from git).
 
+### Tarang vs GStreamer (1 second WAV, 48kHz stereo)
+
+| Operation | GStreamer | Tarang (symphonia) | Speedup |
+|-----------|----------|-------------------|---------|
+| **Probe** | 1.237 ms | 80.3 µs | **15.4× faster** |
+| **Audio decode** | 1.328 ms | 335.6 µs | **3.96× faster** |
+
+Tarang's probe is 15× faster because symphonia reads headers directly — no GStreamer pipeline/element setup overhead. Audio decode is 4× faster due to in-process decoding vs GStreamer's inter-element data flow.
+
+These numbers strongly support completing the Tarang migration for audio workloads. Video decode benchmarks pending (requires real video test fixtures).
+
 ## Planned Benchmarks
 
 - GPU render — frame render time at 1080p/4K with effect chains
 - Export pipeline — encode throughput per format
-- Probe/decode — media file probe latency, video decode frame rate
-- Tarang vs GStreamer — comparative decode/probe benchmarks
+- Video probe/decode — Tarang vs GStreamer with real MP4/MKV/WebM files
