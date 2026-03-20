@@ -1,5 +1,88 @@
 # Changelog
 
+## 2026.3.20
+
+### Tarang 0.20.3 & ai-hwaccel 0.20.3 Integration
+
+#### Phase 1: Native MKV/MP4 Muxing
+- **Replaced custom EBML muxer** (~200 lines) with tarang's `MkvMuxer` and `Mp4Muxer`
+- **MP4 export now native** via tarang — no longer falls back to GStreamer
+- `ExportMuxer` trait abstraction unifies MKV and MP4 write paths
+- Tests updated from EBML byte-level to muxer integration tests
+
+#### Phase 2: Pixel Format Conversion
+- `convert.rs` — switched from `tarang::ai::yuv420p_to_rgb24` to `tarang::video::convert::yuv420p_to_rgb24` (proper module in 0.20.3)
+- `tarang_pipeline.rs` — replaced 35 lines of manual BT.601 `rgba_to_yuv420p()` with tarang's `rgb24_to_yuv420p`
+
+#### Phase 3: Video Scaling for Thumbnails
+- Thumbnails now scale to `spec.width`/`spec.height` via `tarang::video::scale::scale_frame` (Lanczos3 filter)
+- Previously returned native resolution regardless of spec
+
+#### Phase 4: Loudness Measurement & Normalization
+- New `EffectKind::LoudnessNormalize { target_lufs }` effect variant
+- `crates/media/src/loudness.rs` — `measure_loudness()` and `normalize_audio()` wrapping tarang's loudness API
+- Wired into `apply_clip_effects()` audio effect chain
+- `measure_loudness` Tauri IPC command for per-clip LUFS measurement
+- LoudnessMeter UI component in ClipInspector (click to measure, color-coded LUFS display)
+
+#### Phase 5: GPU Monitoring Data
+- `HardwareInfo` extended with `memory_used_bytes`, `memory_free_bytes`, `temperature_c`, `gpu_utilization_percent`
+- Populated from `ai_hwaccel::AcceleratorProfile` fields
+- Hardware panel in ExportDialog shows GPU temp, utilization, and free memory
+
+#### Phase 6: Content-Based Thumbnails
+- `ThumbnailStrategy` enum (`SceneBased` | `ContentBased`) with `#[serde(default)]` backward compat
+- Scene-based uses existing `SceneDetector`; content-based uses tarang's `ThumbnailGenerator`
+- Strategy toggle in MediaBrowser UI
+
+### UI Enhancements
+
+#### Interactive Effect Editors
+- All 15 effect types now have slider/input controls (was read-only text display)
+- `Param` component with label, range slider, numeric readout, and suffix
+- `updateEffect` store action for live parameter updates
+- Undo debouncing: `_mutateSilent` + `_pushUndo` — slider drags produce exactly one undo entry instead of hundreds
+
+#### Effect Preset Menu
+- "Add Effect" button now opens a dropdown with 12 presets: ColorGrade, Volume, FadeIn/Out, Speed, EQ, Compressor, NoiseReduction, Reverb, LoudnessNormalize, Crop, Transform
+
+#### Keyframe Animation UI
+- `KeyframeEditor` wired into EffectList below each effect's parameter controls
+- "K" toggle per parameter to enable/disable animation
+- "+" button adds keyframe at current playback position
+- Expandable keyframe list with frame/value display and delete
+- Supports all animatable params including LoudnessNormalize and FadeIn/Out
+
+#### Mixer Panel
+- Restyled with vertical volume faders, horizontal pan sliders, M/S buttons per track
+- Integrated into AppShell as collapsible 280px panel alongside timeline
+- "Mixer" toggle button in Toolbar
+
+#### Audio Waveform Visualization
+- `extract_waveform` Tauri IPC command wrapping existing Rust backend
+- ClipBlock auto-loads waveform on mount (cached per media path)
+- Canvas-based waveform overlay with semi-transparent white peaks
+- ResizeObserver for proper height tracking on zoom changes
+
+#### Thumbnail Generation Pipeline
+- `generate_thumbnails` Tauri IPC command — returns base64-encoded thumbnail data
+- MediaItem auto-generates thumbnail preview on first render
+- Module-level cache persists across re-renders; regenerates on strategy change
+
+#### Proxy Workflow UI
+- "Generate Proxies" button in MediaBrowser (creates 640px-wide proxy files)
+- "Proxy" mode toggle calling `setProxyMode` IPC
+
+#### Export Dialog
+- MKV added as native export format option
+- Hardware info panel showing GPU family, free memory, temperature, utilization
+
+### Backend
+- `extract_waveform` Tauri command registered
+- `generate_thumbnails` Tauri command with base64-encoded thumbnail results
+- `measure_loudness` Tauri command (decodes all audio, returns integrated LUFS)
+- 555 tests passing (was 529)
+
 ## 2026.3.19
 
 ### Dependency Migration

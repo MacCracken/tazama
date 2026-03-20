@@ -4,6 +4,7 @@ import { useUIStore } from "../../stores/uiStore";
 import { useDragClip } from "./hooks/useDragClip";
 import { useTrimClip } from "./hooks/useTrimClip";
 import { useRazorCut } from "./hooks/useRazorCut";
+import { ClipContextMenu } from "./ClipContextMenu";
 import * as commands from "../../ipc/commands";
 
 interface ClipBlockProps {
@@ -93,6 +94,7 @@ export function ClipBlock({
   const ref = useRef<HTMLDivElement>(null);
   const [waveform, setWaveform] = useState<WaveformData | null>(null);
   const [blockHeight, setBlockHeight] = useState(40);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
 
   // Track container height for waveform canvas sizing
   useEffect(() => {
@@ -161,6 +163,16 @@ export function ClipBlock({
     [activeTool, trackLocked, onDragStart],
   );
 
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      selectClip(clip.id);
+      setContextMenu({ x: e.clientX, y: e.clientY });
+    },
+    [clip.id, selectClip],
+  );
+
   if (left + width < 0) return null;
 
   const blockWidth = Math.max(width, 4);
@@ -181,6 +193,7 @@ export function ClipBlock({
       }}
       onClick={handleClick}
       onMouseDown={handleMouseDown}
+      onContextMenu={handleContextMenu}
     >
       {/* Waveform */}
       {waveform && blockHeight > 0 && (
@@ -213,6 +226,16 @@ export function ClipBlock({
           if (!trackLocked) onMouseDownRight(e);
         }}
       />
+      {/* Context menu */}
+      {contextMenu && (
+        <ClipContextMenu
+          clip={clip}
+          trackId={trackId}
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
     </div>
   );
 }

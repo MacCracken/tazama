@@ -2,18 +2,21 @@ import { useCallback, useRef, useEffect } from "react";
 import type { Clip } from "../../../types";
 import { useProjectStore } from "../../../stores/projectStore";
 import { useUIStore } from "../../../stores/uiStore";
+import { useSnap } from "./useSnap";
 
 export function useDragClip(trackId: string, clip: Clip, locked: boolean) {
   const moveClip = useProjectStore((s) => s.moveClip);
+  const pushUndo = useProjectStore((s) => s._pushUndo);
   const zoom = useUIStore((s) => s.zoom);
+  const snap = useSnap();
   const startX = useRef(0);
   const startFrame = useRef(0);
+  const pushed = useRef(false);
   const handlersRef = useRef<{
     move: ((e: MouseEvent) => void) | null;
     up: (() => void) | null;
   }>({ move: null, up: null });
 
-  // Clean up drag listeners on unmount
   useEffect(() => {
     return () => {
       if (handlersRef.current.move) {
@@ -31,12 +34,18 @@ export function useDragClip(trackId: string, clip: Clip, locked: boolean) {
       e.preventDefault();
       startX.current = e.clientX;
       startFrame.current = clip.timeline_start;
+      pushed.current = false;
 
       const handleMove = (e: MouseEvent) => {
+        if (!pushed.current) {
+          pushUndo();
+          pushed.current = true;
+        }
         const dx = e.clientX - startX.current;
         const frameDelta = Math.round(dx / zoom);
-        const newStart = Math.max(0, startFrame.current + frameDelta);
-        moveClip(trackId, clip.id, newStart);
+        const raw = Math.max(0, startFrame.current + frameDelta);
+        const snapped = snap(raw, clip.id);
+        moveClip(trackId, clip.id, snapped);
       };
 
       const handleUp = () => {
@@ -49,7 +58,7 @@ export function useDragClip(trackId: string, clip: Clip, locked: boolean) {
       document.addEventListener("mousemove", handleMove);
       document.addEventListener("mouseup", handleUp);
     },
-    [clip.id, clip.timeline_start, trackId, zoom, locked, moveClip],
+    [clip.id, clip.timeline_start, trackId, zoom, locked, moveClip, pushUndo, snap],
   );
 
   return { onMouseDown };

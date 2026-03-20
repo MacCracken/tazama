@@ -292,7 +292,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   moveClip: (trackId, clipId, newStart) => {
-    get()._mutate((p) => {
+    get()._mutateSilent((p) => {
       const track = p.timeline.tracks.find((t) => t.id === trackId);
       if (track) {
         const clip = track.clips.find((c) => c.id === clipId);
@@ -332,7 +332,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   trimClip: (trackId, clipId, newOffset, newDuration) => {
-    get()._mutate((p) => {
+    get()._mutateSilent((p) => {
       const track = p.timeline.tracks.find((t) => t.id === trackId);
       if (!track) return;
       const clip = track.clips.find((c) => c.id === clipId);
