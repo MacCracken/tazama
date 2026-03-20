@@ -8,3 +8,6 @@ dist/
 .env.local
 crates/app/binaries/
 tarpaulin-report.html
+target/criterion/
+target/release/deps/*.d
+*.profraw

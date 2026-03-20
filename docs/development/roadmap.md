@@ -40,11 +40,12 @@ Tazama is an AI-native non-linear video editor. MVP target: import media, arrang
 - [ ] Playback module — 0% coverage
 
 ### Benchmarks
-- [ ] DSP benchmarks (criterion) — EQ, compressor, noise reduction, reverb on realistic buffer sizes
+- [x] DSP benchmarks (criterion) — EQ, compressor, noise reduction, reverb on 1s/48kHz buffers (2026.3.19)
+- [x] Keyframe evaluation — evaluate() with 10/100/1000 keyframes, integrated_speed at various lengths (2026.3.19)
+- [x] Timeline serde — serialize/deserialize 10 tracks × 100 clips (2026.3.19)
 - [ ] GPU render benchmarks — frame render time at 1080p/4K, effect chain overhead
-- [ ] Export pipeline benchmarks — encode throughput per format (Mp4/WebM/ProRes/DnxHr/Mkv/Gif)
+- [ ] Export pipeline benchmarks — encode throughput per format
 - [ ] Probe/decode benchmarks — media file probe latency, video decode frame rate
-- [ ] Keyframe evaluation — interpolation throughput with many keyframe tracks
 - [ ] Tarang vs GStreamer — comparative decode/probe benchmarks when tarang feature enabled
 
 ---

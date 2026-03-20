@@ -312,4 +312,164 @@ mod tests {
             PathBuf::from("/tmp/proxies/video_proxy_480.mp4")
         );
     }
+
+    // --- Extension rejection tests ---
+
+    #[test]
+    fn generate_proxy_sync_rejects_wav() {
+        crate::init().ok();
+        let result = generate_proxy_sync("/tmp/test.wav", "/tmp/out.mp4", 640);
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(
+            msg.contains("audio-only"),
+            "expected audio-only rejection, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn generate_proxy_sync_rejects_mp3() {
+        crate::init().ok();
+        let result = generate_proxy_sync("/tmp/test.mp3", "/tmp/out.mp4", 640);
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("audio-only"), "got: {msg}");
+    }
+
+    #[test]
+    fn generate_proxy_sync_rejects_flac() {
+        crate::init().ok();
+        let result = generate_proxy_sync("/tmp/test.flac", "/tmp/out.mp4", 640);
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("audio-only"), "got: {msg}");
+    }
+
+    #[test]
+    fn generate_proxy_sync_rejects_ogg() {
+        crate::init().ok();
+        let result = generate_proxy_sync("/tmp/test.ogg", "/tmp/out.mp4", 640);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn generate_proxy_sync_rejects_m4a() {
+        crate::init().ok();
+        let result = generate_proxy_sync("/tmp/test.m4a", "/tmp/out.mp4", 640);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn generate_proxy_sync_rejects_aac() {
+        crate::init().ok();
+        let result = generate_proxy_sync("/tmp/test.aac", "/tmp/out.mp4", 640);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn generate_proxy_sync_rejects_png() {
+        crate::init().ok();
+        let result = generate_proxy_sync("/tmp/test.png", "/tmp/out.mp4", 640);
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(
+            msg.contains("image"),
+            "expected image rejection, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn generate_proxy_sync_rejects_jpg() {
+        crate::init().ok();
+        let result = generate_proxy_sync("/tmp/test.jpg", "/tmp/out.mp4", 640);
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("image"), "got: {msg}");
+    }
+
+    #[test]
+    fn generate_proxy_sync_rejects_jpeg() {
+        crate::init().ok();
+        let result = generate_proxy_sync("/tmp/test.jpeg", "/tmp/out.mp4", 640);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn generate_proxy_sync_rejects_gif() {
+        crate::init().ok();
+        let result = generate_proxy_sync("/tmp/test.gif", "/tmp/out.mp4", 640);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn generate_proxy_sync_rejects_bmp() {
+        crate::init().ok();
+        let result = generate_proxy_sync("/tmp/test.bmp", "/tmp/out.mp4", 640);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn generate_proxy_sync_rejects_tiff() {
+        crate::init().ok();
+        let result = generate_proxy_sync("/tmp/test.tiff", "/tmp/out.mp4", 640);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn generate_proxy_sync_rejects_svg() {
+        crate::init().ok();
+        let result = generate_proxy_sync("/tmp/test.svg", "/tmp/out.mp4", 640);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn generate_proxy_sync_rejects_uppercase_wav() {
+        crate::init().ok();
+        let result = generate_proxy_sync("/tmp/test.WAV", "/tmp/out.mp4", 640);
+        assert!(result.is_err(), "should reject uppercase audio extension");
+    }
+
+    #[test]
+    fn generate_proxy_sync_rejects_uppercase_png() {
+        crate::init().ok();
+        let result = generate_proxy_sync("/tmp/test.PNG", "/tmp/out.mp4", 640);
+        assert!(result.is_err(), "should reject uppercase image extension");
+    }
+
+    #[test]
+    fn proxy_path_different_widths() {
+        let source = Path::new("/videos/clip.mp4");
+        let proxy_dir = Path::new("/tmp/proxies");
+
+        for width in [360u32, 480, 720, 1080, 1920] {
+            let stem = source
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| "proxy".to_string());
+            let proxy_path = proxy_dir.join(format!("{stem}_proxy_{width}.mp4"));
+            assert_eq!(
+                proxy_path,
+                PathBuf::from(format!("/tmp/proxies/clip_proxy_{width}.mp4"))
+            );
+        }
+    }
+
+    #[test]
+    fn proxy_path_fallback_no_stem() {
+        // A path like "/" has no file_stem
+        let source = Path::new("/");
+        let proxy_dir = Path::new("/tmp/proxies");
+        let target_width = 640u32;
+
+        let stem = source
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| "proxy".to_string());
+        let proxy_path = proxy_dir.join(format!("{stem}_proxy_{target_width}.mp4"));
+
+        assert_eq!(
+            proxy_path,
+            PathBuf::from("/tmp/proxies/proxy_proxy_640.mp4")
+        );
+    }
 }

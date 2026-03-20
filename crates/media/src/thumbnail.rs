@@ -293,6 +293,80 @@ mod tests {
         assert!(debug.contains("1000"));
     }
 
+    #[test]
+    fn thumbnail_spec_serde_roundtrip() {
+        let spec = ThumbnailSpec {
+            width: 320,
+            height: 180,
+            interval_ms: 2000,
+        };
+        let json = serde_json::to_string(&spec).unwrap();
+        let deserialized: ThumbnailSpec = serde_json::from_str(&json).unwrap();
+        assert_eq!(spec.width, deserialized.width);
+        assert_eq!(spec.height, deserialized.height);
+        assert_eq!(spec.interval_ms, deserialized.interval_ms);
+    }
+
+    #[test]
+    fn thumbnail_spec_deserialize_from_json_value() {
+        let val = serde_json::json!({
+            "width": 640,
+            "height": 360,
+            "interval_ms": 500
+        });
+        let spec: ThumbnailSpec = serde_json::from_value(val).unwrap();
+        assert_eq!(spec.width, 640);
+        assert_eq!(spec.height, 360);
+        assert_eq!(spec.interval_ms, 500);
+    }
+
+    #[test]
+    fn thumbnail_spec_deserialize_missing_field_fails() {
+        let val = serde_json::json!({ "width": 100, "height": 50 });
+        let result = serde_json::from_value::<ThumbnailSpec>(val);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn thumbnail_spec_large_values() {
+        let spec = ThumbnailSpec {
+            width: u32::MAX,
+            height: u32::MAX,
+            interval_ms: u64::MAX,
+        };
+        let json = serde_json::to_string(&spec).unwrap();
+        let back: ThumbnailSpec = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.width, u32::MAX);
+        assert_eq!(back.height, u32::MAX);
+        assert_eq!(back.interval_ms, u64::MAX);
+    }
+
+    #[tokio::test]
+    async fn generate_thumbnails_gst_nonexistent_returns_error() {
+        crate::init().ok();
+        let spec = ThumbnailSpec {
+            width: 160,
+            height: 90,
+            interval_ms: 1000,
+        };
+        let path = PathBuf::from("/tmp/absolutely_nonexistent_tazama_test_file.mp4");
+        let result = generate_thumbnails_gst(&path, spec).await;
+        assert!(result.is_err(), "expected error for nonexistent file");
+    }
+
+    #[tokio::test]
+    async fn generate_thumbnails_gst_directory_returns_error() {
+        crate::init().ok();
+        let spec = ThumbnailSpec {
+            width: 160,
+            height: 90,
+            interval_ms: 1000,
+        };
+        let path = PathBuf::from("/tmp");
+        let result = generate_thumbnails_gst(&path, spec).await;
+        assert!(result.is_err(), "expected error when path is a directory");
+    }
+
     #[cfg(feature = "tarang")]
     mod tarang_tests {
         use super::*;

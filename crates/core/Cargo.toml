@@ -11,3 +11,10 @@ serde_json.workspace = true
 thiserror.workspace = true
 chrono.workspace = true
 uuid.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "keyframe"
+harness = false

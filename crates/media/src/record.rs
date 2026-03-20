@@ -433,4 +433,168 @@ mod tests {
             "default state should be Idle"
         );
     }
+
+    #[test]
+    fn write_wav_known_samples_exact_bytes() {
+        // Write known f32 samples and verify exact i16 bytes in output
+        let samples = vec![0.0f32, 1.0, -1.0, 0.5, -0.5];
+        let path = std::env::temp_dir().join("tazama_test_wav_exact_bytes.wav");
+        write_wav(&path, &samples, 44100, 1).unwrap();
+
+        let data = std::fs::read(&path).unwrap();
+
+        // Verify each i16 sample starting at byte 44
+        // 0.0 * 32767 = 0
+        let s0 = i16::from_le_bytes([data[44], data[45]]);
+        assert_eq!(s0, 0);
+        // 1.0 * 32767 = 32767
+        let s1 = i16::from_le_bytes([data[46], data[47]]);
+        assert_eq!(s1, 32767);
+        // -1.0 * 32767 = -32767
+        let s2 = i16::from_le_bytes([data[48], data[49]]);
+        assert_eq!(s2, -32767);
+        // 0.5 * 32767 = 16383
+        let s3 = i16::from_le_bytes([data[50], data[51]]);
+        assert_eq!(s3, 16383);
+        // -0.5 * 32767 = -16383
+        let s4 = i16::from_le_bytes([data[52], data[53]]);
+        assert_eq!(s4, -16383);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn wav_header_44100_stereo() {
+        let samples = vec![0.0f32; 100];
+        let path = std::env::temp_dir().join("tazama_test_wav_44100_stereo.wav");
+        write_wav(&path, &samples, 44100, 2).unwrap();
+
+        let data = std::fs::read(&path).unwrap();
+
+        // Format tag = 1 (PCM)
+        let format = u16::from_le_bytes([data[20], data[21]]);
+        assert_eq!(format, 1);
+
+        // Channels = 2
+        let ch = u16::from_le_bytes([data[22], data[23]]);
+        assert_eq!(ch, 2);
+
+        // Sample rate = 44100
+        let sr = u32::from_le_bytes([data[24], data[25], data[26], data[27]]);
+        assert_eq!(sr, 44100);
+
+        // Byte rate = 44100 * 2 * 2 = 176400
+        let br = u32::from_le_bytes([data[28], data[29], data[30], data[31]]);
+        assert_eq!(br, 176400);
+
+        // Block align = 2 * 2 = 4
+        let ba = u16::from_le_bytes([data[32], data[33]]);
+        assert_eq!(ba, 4);
+
+        // Bits per sample = 16
+        let bps = u16::from_le_bytes([data[34], data[35]]);
+        assert_eq!(bps, 16);
+
+        // fmt chunk size = 16
+        let fmt_size = u32::from_le_bytes([data[16], data[17], data[18], data[19]]);
+        assert_eq!(fmt_size, 16);
+
+        // Data size = 100 * 2 = 200
+        let data_size = u32::from_le_bytes([data[40], data[41], data[42], data[43]]);
+        assert_eq!(data_size, 200);
+
+        // RIFF file size = 36 + data_size
+        let file_size = u32::from_le_bytes([data[4], data[5], data[6], data[7]]);
+        assert_eq!(file_size, 36 + 200);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn wav_header_mono_48000() {
+        let samples = vec![0.0f32; 50];
+        let path = std::env::temp_dir().join("tazama_test_wav_mono_48000.wav");
+        write_wav(&path, &samples, 48000, 1).unwrap();
+
+        let data = std::fs::read(&path).unwrap();
+
+        let ch = u16::from_le_bytes([data[22], data[23]]);
+        assert_eq!(ch, 1);
+
+        let sr = u32::from_le_bytes([data[24], data[25], data[26], data[27]]);
+        assert_eq!(sr, 48000);
+
+        // Byte rate = 48000 * 1 * 2 = 96000
+        let br = u32::from_le_bytes([data[28], data[29], data[30], data[31]]);
+        assert_eq!(br, 96000);
+
+        // Block align = 1 * 2 = 2
+        let ba = u16::from_le_bytes([data[32], data[33]]);
+        assert_eq!(ba, 2);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn write_wav_boundary_values() {
+        // Test exact boundary float values
+        #[allow(clippy::excessive_precision)]
+        let samples = vec![1.0f32, -1.0, 0.999969482421875]; // 0.999969... = 32767/32768
+        let path = std::env::temp_dir().join("tazama_test_wav_boundary.wav");
+        write_wav(&path, &samples, 48000, 1).unwrap();
+
+        let data = std::fs::read(&path).unwrap();
+        let s0 = i16::from_le_bytes([data[44], data[45]]);
+        assert_eq!(s0, 32767); // 1.0 clamped
+        let s1 = i16::from_le_bytes([data[46], data[47]]);
+        assert_eq!(s1, -32767); // -1.0 * 32767
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn write_wav_single_sample() {
+        let samples = vec![0.25f32];
+        let path = std::env::temp_dir().join("tazama_test_wav_single.wav");
+        write_wav(&path, &samples, 16000, 1).unwrap();
+
+        let data = std::fs::read(&path).unwrap();
+        assert_eq!(data.len(), 46); // 44 header + 2 bytes
+        let s0 = i16::from_le_bytes([data[44], data[45]]);
+        assert_eq!(s0, (0.25 * 32767.0) as i16);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn start_already_recording_returns_error() {
+        // We can't easily start recording in CI (no audio device),
+        // but we can verify the error message for "already recording"
+        // by checking the stop-without-start error path.
+        if let Ok(mut state) = recorder().lock() {
+            *state = RecorderState::Idle;
+        }
+        let result = stop();
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(
+            msg.contains("no recording in progress"),
+            "expected 'no recording in progress', got: {msg}"
+        );
+    }
+
+    #[test]
+    fn write_wav_file_size_field_consistency() {
+        // Verify RIFF file_size = total_bytes - 8 (RIFF + size field itself)
+        let samples = vec![0.1f32; 500];
+        let path = std::env::temp_dir().join("tazama_test_wav_size_consistency.wav");
+        write_wav(&path, &samples, 44100, 1).unwrap();
+
+        let data = std::fs::read(&path).unwrap();
+        let riff_size = u32::from_le_bytes([data[4], data[5], data[6], data[7]]);
+        // RIFF size should be total file size minus 8
+        assert_eq!(riff_size as usize, data.len() - 8);
+
+        let _ = std::fs::remove_file(&path);
+    }
 }

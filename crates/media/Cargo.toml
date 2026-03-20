@@ -32,3 +32,8 @@ plugins = ["dep:wasmtime"]
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 serde_json.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "dsp"
+harness = false

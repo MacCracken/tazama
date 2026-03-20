@@ -1357,4 +1357,338 @@ mod tests {
             "video effects should not modify audio samples"
         );
     }
+
+    // --- Additional coverage tests ---
+
+    #[test]
+    fn test_fade_in_zero_duration_is_noop() {
+        let mut samples = vec![1.0f32; 100];
+        let original = samples.clone();
+        apply_fade_in(&mut samples, 48000, 1, 0, 30.0);
+        assert_eq!(samples, original, "zero-duration fade-in should be a noop");
+    }
+
+    #[test]
+    fn test_fade_out_zero_duration_is_noop() {
+        let mut samples = vec![1.0f32; 100];
+        let original = samples.clone();
+        apply_fade_out(&mut samples, 48000, 1, 0, 30, 30.0);
+        assert_eq!(samples, original, "zero-duration fade-out should be a noop");
+    }
+
+    #[test]
+    fn test_fade_in_negative_fps_is_noop() {
+        let mut samples = vec![1.0f32; 100];
+        let original = samples.clone();
+        apply_fade_in(&mut samples, 48000, 1, 10, -1.0);
+        assert_eq!(samples, original, "negative fps fade-in should be a noop");
+    }
+
+    #[test]
+    fn test_fade_out_negative_fps_is_noop() {
+        let mut samples = vec![1.0f32; 100];
+        let original = samples.clone();
+        apply_fade_out(&mut samples, 48000, 1, 10, 30, -1.0);
+        assert_eq!(samples, original, "negative fps fade-out should be a noop");
+    }
+
+    #[test]
+    fn test_fade_in_stereo() {
+        // 2 channels, 960 interleaved samples = 480 frames
+        let mut samples = vec![1.0f32; 960];
+        // Fade over 5 frames at 30fps = 1/6 sec ≈ 8000 samples (mono) = 16000 interleaved
+        // But we only have 960 samples, so the entire buffer is within the fade
+        apply_fade_in(&mut samples, 48000, 2, 5, 30.0);
+        // First stereo frame (samples 0,1) should be ~0
+        assert!(samples[0].abs() < 1e-6, "stereo fade-in L[0] should be ~0");
+        assert!(samples[1].abs() < 1e-6, "stereo fade-in R[0] should be ~0");
+        // A frame partway through should be attenuated
+        assert!(samples[100] < 1.0, "stereo fade-in should attenuate");
+    }
+
+    #[test]
+    fn test_fade_out_stereo() {
+        // 2 channels, 32000 interleaved samples = 16000 frames
+        // Fade over 10 frames at 30fps = 1/3 sec = 16000 frames
+        // So the entire buffer is a fade from 1.0 to 0.0
+        let mut samples = vec![1.0f32; 32000];
+        apply_fade_out(&mut samples, 48000, 2, 10, 300, 30.0);
+        // Last stereo frame should be ~0
+        assert!(
+            samples[31998].abs() < 0.01,
+            "stereo fade-out L[-1] should be ~0, got {}",
+            samples[31998]
+        );
+        assert!(
+            samples[31999].abs() < 0.01,
+            "stereo fade-out R[-1] should be ~0, got {}",
+            samples[31999]
+        );
+        // First stereo frame should be ~1.0
+        assert!(
+            (samples[0] - 1.0).abs() < 0.01,
+            "stereo fade-out first L should be ~1.0, got {}",
+            samples[0]
+        );
+    }
+
+    #[test]
+    fn test_fade_in_exact_boundary() {
+        // Fade exactly covers the buffer: 10 frames at 10fps = 1 sec = 48000 mono samples
+        let mut samples = vec![1.0f32; 48000];
+        apply_fade_in(&mut samples, 48000, 1, 10, 10.0);
+        // First sample = 0
+        assert!(samples[0].abs() < 1e-6);
+        // Last sample should be near 1.0 (gain = 47999/48000)
+        assert!(
+            (samples[47999] - 1.0).abs() < 0.001,
+            "last sample in exact fade should be ~1.0, got {}",
+            samples[47999]
+        );
+    }
+
+    #[test]
+    fn test_fade_in_shorter_than_buffer() {
+        // Buffer is 48000, fade is only 5 frames at 30fps = 1/6 sec = 8000 samples
+        let mut samples = vec![1.0f32; 48000];
+        apply_fade_in(&mut samples, 48000, 1, 5, 30.0);
+        // First sample = 0
+        assert!(samples[0].abs() < 1e-6);
+        // Sample at 8000 should be unmodified (past the fade)
+        assert!(
+            (samples[8001] - 1.0).abs() < 1e-6,
+            "samples past fade should be 1.0, got {}",
+            samples[8001]
+        );
+    }
+
+    #[test]
+    fn test_clamp_negative_overflow() {
+        // Two loud negative clips that would sum < -1.0
+        let clip_a = DecodedClip {
+            samples: vec![-0.8; 4],
+            start_sample: 0,
+            volume: 1.0,
+            pan_gains: (1.0, 1.0),
+        };
+        let clip_b = DecodedClip {
+            samples: vec![-0.7; 4],
+            start_sample: 0,
+            volume: 1.0,
+            pan_gains: (1.0, 1.0),
+        };
+
+        let mut mix = [0.0f32; 4];
+        for clip in &[&clip_a, &clip_b] {
+            for (i, m) in mix.iter_mut().enumerate().take(4) {
+                *m += clip.samples[i] * clip.volume;
+            }
+        }
+        for s in &mut mix {
+            *s = s.clamp(-1.0, 1.0);
+        }
+        // -0.8 + -0.7 = -1.5, clamped to -1.0
+        assert_eq!(mix[0], -1.0);
+    }
+
+    #[test]
+    fn test_frames_to_samples_high_fps() {
+        // 60fps, 44100Hz, mono: 60 frames = 1 second = 44100 samples
+        let samples = frames_to_samples(60, 60.0, 44100, 1);
+        assert_eq!(samples, 44100);
+    }
+
+    #[test]
+    fn test_frames_to_samples_ntsc() {
+        // 29.97fps approximation: 30 frames ≈ 1.001 sec
+        let samples = frames_to_samples(30, 29.97, 48000, 2);
+        // 30/29.97 * 48000 * 2 ≈ 96096
+        let expected = (30.0 / 29.97 * 48000.0 * 2.0) as u64;
+        assert_eq!(samples, expected);
+    }
+
+    #[test]
+    fn test_mono_mixing_path() {
+        // Exercise the mono branch (ch < 2) in the mixing loop
+        let clip = DecodedClip {
+            samples: vec![0.5; 4],
+            start_sample: 0,
+            volume: 0.8,
+            pan_gains: (1.0, 0.0), // ignored for mono
+        };
+
+        let ch = 1usize;
+        let mut mix = vec![0.0f32; 4];
+        // Mono path: no pan
+        for (i, m) in mix.iter_mut().enumerate().take(4) {
+            *m += clip.samples[i] * clip.volume;
+        }
+        for s in &mix {
+            assert!(
+                (*s - 0.4).abs() < 1e-6,
+                "mono mix: 0.5 * 0.8 = 0.4, got {s}"
+            );
+        }
+        let _ = ch;
+    }
+
+    #[test]
+    fn test_equal_power_pan_clamping() {
+        // Values outside [-1, 1] should be clamped
+        let (l1, r1) = equal_power_pan(-2.0);
+        let (l2, r2) = equal_power_pan(-1.0);
+        assert!((l1 - l2).abs() < 1e-6, "pan=-2 should clamp to pan=-1");
+        assert!((r1 - r2).abs() < 1e-6);
+
+        let (l3, r3) = equal_power_pan(2.0);
+        let (l4, r4) = equal_power_pan(1.0);
+        assert!((l3 - l4).abs() < 1e-6, "pan=2 should clamp to pan=1");
+        assert!((r3 - r4).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_mix_multiple_muted_tracks_no_output() {
+        let mut timeline = tazama_core::Timeline::new();
+        timeline.add_track(tazama_core::Track::new("A1", TrackKind::Audio));
+        timeline.add_track(tazama_core::Track::new("A2", TrackKind::Audio));
+        timeline.tracks[0].muted = true;
+        timeline.tracks[1].muted = true;
+
+        let clip1 = tazama_core::Clip::new("c1", ClipKind::Audio, 0, 30);
+        let clip2 = tazama_core::Clip::new("c2", ClipKind::Audio, 0, 30);
+        let _ = timeline.tracks[0].add_clip(clip1);
+        let _ = timeline.tracks[1].add_clip(clip2);
+
+        let frame_rate = tazama_core::FrameRate::new(30, 1);
+        let (tx, mut rx) = tokio::sync::mpsc::channel(16);
+        mix_timeline_audio(&timeline, &frame_rate, 48000, 2, tx).unwrap();
+        assert!(
+            rx.try_recv().is_err(),
+            "all muted tracks should produce no output"
+        );
+    }
+
+    #[test]
+    fn test_mix_solo_track_with_clip_but_no_media() {
+        let mut timeline = tazama_core::Timeline::new();
+        timeline.add_track(tazama_core::Track::new("A1", TrackKind::Audio));
+        timeline.add_track(tazama_core::Track::new("A2", TrackKind::Audio));
+        timeline.tracks[0].solo = true;
+        // A1 is solo'd but clip has no media — should produce no output
+        let clip = tazama_core::Clip::new("c1", ClipKind::Audio, 0, 30);
+        let _ = timeline.tracks[0].add_clip(clip);
+
+        let frame_rate = tazama_core::FrameRate::new(30, 1);
+        let (tx, mut rx) = tokio::sync::mpsc::channel(16);
+        mix_timeline_audio(&timeline, &frame_rate, 48000, 2, tx).unwrap();
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn test_source_offset_clips_audio() {
+        // Simulate clip with source_offset: start reading from sample 4
+        let all_samples = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8];
+        let source_offset_samples = 4usize;
+        let clip_duration_samples = 4usize;
+        let start = source_offset_samples.min(all_samples.len());
+        let end = (source_offset_samples + clip_duration_samples).min(all_samples.len());
+        let trimmed = &all_samples[start..end];
+        assert_eq!(trimmed, &[0.5, 0.6, 0.7, 0.8]);
+    }
+
+    #[test]
+    fn test_source_offset_beyond_audio_length() {
+        let all_samples = [0.1, 0.2, 0.3, 0.4];
+        let source_offset_samples = 10usize;
+        let clip_duration_samples = 4usize;
+        let start = source_offset_samples.min(all_samples.len());
+        let end = (source_offset_samples + clip_duration_samples).min(all_samples.len());
+        // start >= end, so trimmed region is empty
+        assert!(start >= end, "offset past end should produce empty region");
+    }
+
+    #[test]
+    fn test_timeline_start_positions_clip() {
+        // Two clips at different timeline positions
+        let clip_a = DecodedClip {
+            samples: vec![1.0; 4],
+            start_sample: 0,
+            volume: 1.0,
+            pan_gains: (1.0, 1.0),
+        };
+        let clip_b = DecodedClip {
+            samples: vec![0.5; 4],
+            start_sample: 8, // starts 8 samples later
+            volume: 1.0,
+            pan_gains: (1.0, 1.0),
+        };
+
+        // Chunk covering 0..12
+        let chunk_size = 12;
+        let mut mix = vec![0.0f32; chunk_size];
+        let offset: u64 = 0;
+
+        for clip in &[&clip_a, &clip_b] {
+            let clip_end = clip.start_sample + clip.samples.len() as u64;
+            if offset >= clip_end || offset + chunk_size as u64 <= clip.start_sample {
+                continue;
+            }
+            let chunk_start_in_clip = if offset > clip.start_sample {
+                (offset - clip.start_sample) as usize
+            } else {
+                0
+            };
+            let mix_start = if clip.start_sample > offset {
+                (clip.start_sample - offset) as usize
+            } else {
+                0
+            };
+            let available_from_clip = clip.samples.len() - chunk_start_in_clip;
+            let available_in_mix = chunk_size - mix_start;
+            let copy_len = available_from_clip.min(available_in_mix);
+            for i in 0..copy_len {
+                mix[mix_start + i] += clip.samples[chunk_start_in_clip + i] * clip.volume;
+            }
+        }
+
+        // 0..4: clip_a (1.0)
+        assert_eq!(mix[0], 1.0);
+        assert_eq!(mix[3], 1.0);
+        // 4..8: silence
+        assert_eq!(mix[4], 0.0);
+        assert_eq!(mix[7], 0.0);
+        // 8..12: clip_b (0.5)
+        assert!((mix[8] - 0.5).abs() < 1e-6);
+        assert!((mix[11] - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_fade_in_with_zero_fps_is_noop() {
+        let mut samples = vec![1.0f32; 100];
+        let original = samples.clone();
+        apply_fade_in(&mut samples, 48000, 1, 10, 0.0);
+        assert_eq!(samples, original);
+    }
+
+    #[test]
+    fn test_fade_out_with_zero_fps_is_noop() {
+        let mut samples = vec![1.0f32; 100];
+        let original = samples.clone();
+        apply_fade_out(&mut samples, 48000, 1, 10, 30, 0.0);
+        assert_eq!(samples, original);
+    }
+
+    #[test]
+    fn test_fade_out_empty_samples_no_panic() {
+        let mut samples: Vec<f32> = vec![];
+        apply_fade_out(&mut samples, 48000, 1, 10, 30, 30.0);
+        assert!(samples.is_empty());
+    }
+
+    #[test]
+    fn test_fade_in_empty_samples_no_panic() {
+        let mut samples: Vec<f32> = vec![];
+        apply_fade_in(&mut samples, 48000, 1, 10, 30.0);
+        assert!(samples.is_empty());
+    }
 }

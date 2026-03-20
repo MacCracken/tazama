@@ -1357,4 +1357,376 @@ mod tests {
         let text = response["result"]["content"][0]["text"].as_str().unwrap();
         assert!(text.contains("Unsupported format"));
     }
+
+    // ── validate_user_path tests ──────────────────────────────────────
+
+    #[test]
+    fn validate_path_valid_relative() {
+        assert!(validate_user_path("media/clip.mp4").is_ok());
+    }
+
+    #[test]
+    fn validate_path_simple_filename() {
+        assert_eq!(validate_user_path("video.mp4").unwrap(), "video.mp4");
+    }
+
+    #[test]
+    fn validate_path_rejects_parent_traversal() {
+        assert!(validate_user_path("../etc/passwd").is_err());
+    }
+
+    #[test]
+    fn validate_path_rejects_mid_traversal() {
+        assert!(validate_user_path("media/../../../secret").is_err());
+    }
+
+    #[test]
+    fn validate_path_allows_dots_in_filename() {
+        assert!(validate_user_path("my.video.file.mp4").is_ok());
+    }
+
+    #[test]
+    fn validate_path_allows_current_dir() {
+        assert!(validate_user_path("./clip.mp4").is_ok());
+    }
+
+    #[test]
+    fn validate_path_empty_string() {
+        assert!(validate_user_path("").is_ok());
+    }
+
+    #[test]
+    fn validate_path_absolute_allowed() {
+        // The function only rejects "..", not absolute paths
+        assert!(validate_user_path("/tmp/video.mp4").is_ok());
+    }
+
+    // ── parse_effect_kind additional tests ────────────────────────────
+
+    #[test]
+    fn parse_effect_crop_defaults() {
+        let kind = parse_effect_kind("crop", &json!({})).unwrap();
+        if let EffectKind::Crop {
+            left,
+            top,
+            right,
+            bottom,
+        } = kind
+        {
+            assert!((left - 0.0).abs() < f32::EPSILON);
+            assert!((top - 0.0).abs() < f32::EPSILON);
+            assert!((right - 0.0).abs() < f32::EPSILON);
+            assert!((bottom - 0.0).abs() < f32::EPSILON);
+        } else {
+            panic!("expected Crop");
+        }
+    }
+
+    #[test]
+    fn parse_effect_fade_out_default_duration() {
+        let kind = parse_effect_kind("fade_out", &json!({})).unwrap();
+        assert!(matches!(
+            kind,
+            EffectKind::FadeOut {
+                duration_frames: 30
+            }
+        ));
+    }
+
+    #[test]
+    fn parse_effect_volume_default() {
+        let kind = parse_effect_kind("volume", &json!({})).unwrap();
+        if let EffectKind::Volume { gain_db } = kind {
+            assert!((gain_db - 0.0).abs() < f32::EPSILON);
+        } else {
+            panic!("expected Volume");
+        }
+    }
+
+    #[test]
+    fn parse_effect_speed_default() {
+        let kind = parse_effect_kind("speed", &json!({})).unwrap();
+        if let EffectKind::Speed { factor } = kind {
+            assert!((factor - 1.0).abs() < f32::EPSILON);
+        } else {
+            panic!("expected Speed");
+        }
+    }
+
+    #[test]
+    fn parse_effect_unknown_returns_descriptive_error() {
+        let err = parse_effect_kind("wobble", &json!({})).unwrap_err();
+        assert!(err.contains("Unknown effect"));
+        assert!(err.contains("wobble"));
+    }
+
+    // ── handle_create_project edge cases ──────────────────────────────
+
+    #[test]
+    fn create_project_zero_width() {
+        let mut state = ServerState::new();
+        let response = handle_create_project(
+            &json!(1),
+            &json!({ "name": "P", "width": 0, "height": 1080 }),
+            &mut state,
+        );
+        assert_eq!(response["result"]["isError"], true);
+        let text = response["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("Invalid dimensions"));
+    }
+
+    #[test]
+    fn create_project_zero_height() {
+        let mut state = ServerState::new();
+        let response = handle_create_project(
+            &json!(1),
+            &json!({ "name": "P", "width": 1920, "height": 0 }),
+            &mut state,
+        );
+        assert_eq!(response["result"]["isError"], true);
+    }
+
+    #[test]
+    fn create_project_oversized_width() {
+        let mut state = ServerState::new();
+        let response = handle_create_project(
+            &json!(1),
+            &json!({ "name": "P", "width": 9000, "height": 1080 }),
+            &mut state,
+        );
+        assert_eq!(response["result"]["isError"], true);
+    }
+
+    #[test]
+    fn create_project_default_dimensions() {
+        let mut state = ServerState::new();
+        let response = handle_create_project(&json!(1), &json!({ "name": "Defaults" }), &mut state);
+        let text = response["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("1920x1080"));
+    }
+
+    #[test]
+    fn create_project_has_default_tracks() {
+        let mut state = ServerState::new();
+        handle_create_project(&json!(1), &json!({ "name": "T" }), &mut state);
+        let project = state.project.as_ref().unwrap();
+        assert_eq!(project.timeline.tracks.len(), 2);
+        assert_eq!(project.timeline.tracks[0].name, "Video 1");
+        assert_eq!(project.timeline.tracks[1].name, "Audio 1");
+    }
+
+    // ── handle_add_clip error paths ───────────────────────────────────
+
+    #[tokio::test]
+    async fn add_clip_no_project() {
+        let mut state = ServerState::new();
+        let response = handle_add_clip(
+            &json!(1),
+            &json!({ "track": "Video 1", "source": "clip.mp4" }),
+            &mut state,
+        )
+        .await;
+        assert_eq!(response["result"]["isError"], true);
+        let text = response["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("No project loaded"));
+    }
+
+    #[tokio::test]
+    async fn add_clip_missing_track() {
+        let mut state = ServerState::new();
+        handle_create_project(&json!(1), &json!({ "name": "T" }), &mut state);
+        let response =
+            handle_add_clip(&json!(2), &json!({ "source": "clip.mp4" }), &mut state).await;
+        assert_eq!(response["result"]["isError"], true);
+        let text = response["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("Missing required parameter: track"));
+    }
+
+    #[tokio::test]
+    async fn add_clip_missing_source() {
+        let mut state = ServerState::new();
+        handle_create_project(&json!(1), &json!({ "name": "T" }), &mut state);
+        let response = handle_add_clip(&json!(2), &json!({ "track": "Video 1" }), &mut state).await;
+        assert_eq!(response["result"]["isError"], true);
+        let text = response["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("Missing required parameter: source"));
+    }
+
+    #[tokio::test]
+    async fn add_clip_path_traversal_rejected() {
+        let mut state = ServerState::new();
+        handle_create_project(&json!(1), &json!({ "name": "T" }), &mut state);
+        let response = handle_add_clip(
+            &json!(2),
+            &json!({ "track": "Video 1", "source": "../../../etc/passwd" }),
+            &mut state,
+        )
+        .await;
+        assert_eq!(response["result"]["isError"], true);
+        let text = response["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("Invalid source path"));
+    }
+
+    // ── handle_apply_effect additional error paths ────────────────────
+
+    #[test]
+    fn apply_effect_missing_effect_name() {
+        let mut state = ServerState::new();
+        handle_create_project(&json!(1), &json!({ "name": "T" }), &mut state);
+        let response = handle_apply_effect(
+            &json!(2),
+            &json!({ "clip_id": "00000000-0000-0000-0000-000000000000" }),
+            &mut state,
+        );
+        assert_eq!(response["result"]["isError"], true);
+        let text = response["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("Missing required parameter: effect"));
+    }
+
+    #[test]
+    fn apply_effect_clip_not_found() {
+        let mut state = ServerState::new();
+        handle_create_project(&json!(1), &json!({ "name": "T" }), &mut state);
+        let response = handle_apply_effect(
+            &json!(2),
+            &json!({ "clip_id": "00000000-0000-0000-0000-000000000000", "effect": "crop" }),
+            &mut state,
+        );
+        assert_eq!(response["result"]["isError"], true);
+        let text = response["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("Clip not found"));
+    }
+
+    #[test]
+    fn apply_effect_unknown_effect_name() {
+        let mut state = ServerState::new();
+        handle_create_project(&json!(1), &json!({ "name": "T" }), &mut state);
+        let response = handle_apply_effect(
+            &json!(2),
+            &json!({ "clip_id": "00000000-0000-0000-0000-000000000000", "effect": "hologram" }),
+            &mut state,
+        );
+        assert_eq!(response["result"]["isError"], true);
+        let text = response["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("Unknown effect"));
+    }
+
+    // ── handle_export additional paths ────────────────────────────────
+
+    #[tokio::test]
+    async fn export_path_traversal_rejected() {
+        let mut state = ServerState::new();
+        handle_create_project(&json!(1), &json!({ "name": "T" }), &mut state);
+        let response = handle_export(
+            &json!(2),
+            &json!({ "output_path": "../../../tmp/evil.mp4" }),
+            &state,
+        )
+        .await;
+        assert_eq!(response["result"]["isError"], true);
+        let text = response["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("Invalid output path"));
+    }
+
+    // ── handle_extract_frame path traversal ───────────────────────────
+
+    #[tokio::test]
+    async fn extract_frame_output_path_traversal() {
+        let mut state = ServerState::new();
+        handle_create_project(&json!(1), &json!({ "name": "T" }), &mut state);
+        let response = handle_extract_frame(
+            &json!(2),
+            &json!({
+                "clip_id": "00000000-0000-0000-0000-000000000000",
+                "frame_number": 0,
+                "output_path": "../../evil.png"
+            }),
+            &state,
+        )
+        .await;
+        assert_eq!(response["result"]["isError"], true);
+        let text = response["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("Invalid output path"));
+    }
+
+    // ── handle_add_marker additional paths ────────────────────────────
+
+    #[test]
+    fn add_marker_no_project() {
+        let mut state = ServerState::new();
+        let response =
+            handle_add_marker(&json!(1), &json!({ "name": "M", "frame": 0 }), &mut state);
+        assert_eq!(response["result"]["isError"], true);
+        let text = response["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("No project loaded"));
+    }
+
+    #[test]
+    fn add_marker_default_color_is_blue() {
+        let mut state = ServerState::new();
+        handle_create_project(&json!(1), &json!({ "name": "T" }), &mut state);
+        // No color param → defaults to blue, should succeed
+        let response = handle_add_marker(
+            &json!(2),
+            &json!({ "name": "DefaultColor", "frame": 42 }),
+            &mut state,
+        );
+        let text = response["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("Added marker"));
+    }
+
+    // ── mcp_success / mcp_error with various id types ─────────────────
+
+    #[test]
+    fn mcp_success_with_string_id() {
+        let id = json!("req-abc");
+        let result = mcp_success(&id, "ok");
+        assert_eq!(result["id"], "req-abc");
+        assert_eq!(result["result"]["content"][0]["text"], "ok");
+    }
+
+    #[test]
+    fn mcp_error_with_null_id() {
+        let id = json!(null);
+        let result = mcp_error(&id, "fail");
+        assert!(result["id"].is_null());
+        assert_eq!(result["result"]["isError"], true);
+    }
+
+    // ── handle_request edge cases ─────────────────────────────────────
+
+    #[tokio::test]
+    async fn handle_request_missing_method_treated_as_unknown() {
+        let mut state = ServerState::new();
+        let request = json!({ "jsonrpc": "2.0", "id": 1 });
+        let response = handle_request(&request, &mut state).await;
+        // method defaults to "" which is unknown
+        assert_eq!(response["error"]["code"], -32601);
+    }
+
+    #[tokio::test]
+    async fn handle_request_tools_call_missing_tool_name() {
+        let mut state = ServerState::new();
+        let request = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {}
+        });
+        let response = handle_request(&request, &mut state).await;
+        // tool name defaults to "" → Unknown tool
+        assert_eq!(response["result"]["isError"], true);
+    }
+
+    // ── find_track_id with invalid UUID string ────────────────────────
+
+    #[test]
+    fn find_track_id_invalid_uuid_falls_back_to_name() {
+        let mut timeline = Timeline::new();
+        let track = Track::new("not-a-uuid", TrackKind::Audio);
+        let expected_id = track.id;
+        timeline.add_track(track);
+        // "not-a-uuid" fails UUID parse, falls back to name match
+        assert_eq!(find_track_id(&timeline, "not-a-uuid"), Some(expected_id));
+    }
 }

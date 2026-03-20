@@ -278,4 +278,228 @@ mod tests {
         assert_eq!(format!("{:?}", ExportFormat::Mkv), "Mkv");
         assert_eq!(format!("{:?}", ExportFormat::Gif), "Gif");
     }
+
+    #[test]
+    fn export_encoder_default_is_auto() {
+        let enc = ExportEncoder::default();
+        assert_eq!(enc, ExportEncoder::Auto);
+    }
+
+    #[test]
+    fn export_encoder_serde_roundtrip_all_variants() {
+        for (variant, expected_json) in [
+            (ExportEncoder::Auto, "\"Auto\""),
+            (ExportEncoder::Software, "\"Software\""),
+            (ExportEncoder::Vaapi, "\"Vaapi\""),
+            (ExportEncoder::Nvenc, "\"Nvenc\""),
+            (ExportEncoder::Tarang, "\"Tarang\""),
+        ] {
+            let json = serde_json::to_string(&variant).unwrap();
+            assert_eq!(json, expected_json);
+            let back: ExportEncoder = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, variant);
+        }
+    }
+
+    #[test]
+    fn export_encoder_debug() {
+        assert_eq!(format!("{:?}", ExportEncoder::Auto), "Auto");
+        assert_eq!(format!("{:?}", ExportEncoder::Software), "Software");
+        assert_eq!(format!("{:?}", ExportEncoder::Vaapi), "Vaapi");
+        assert_eq!(format!("{:?}", ExportEncoder::Nvenc), "Nvenc");
+        assert_eq!(format!("{:?}", ExportEncoder::Tarang), "Tarang");
+    }
+
+    #[test]
+    fn export_config_with_all_fields() {
+        let config = ExportConfig {
+            output_path: "/tmp/full_test.mp4".into(),
+            format: ExportFormat::Mp4,
+            width: 3840,
+            height: 2160,
+            frame_rate: (60, 1),
+            sample_rate: 96000,
+            channels: 6,
+            audio_codec: Some(ExportAudioCodec::Aac),
+            hardware_accel: true,
+            encoder: ExportEncoder::Nvenc,
+        };
+        assert_eq!(config.width, 3840);
+        assert_eq!(config.height, 2160);
+        assert_eq!(config.frame_rate, (60, 1));
+        assert_eq!(config.sample_rate, 96000);
+        assert_eq!(config.channels, 6);
+        assert_eq!(config.audio_codec, Some(ExportAudioCodec::Aac));
+        assert!(config.hardware_accel);
+        assert_eq!(config.encoder, ExportEncoder::Nvenc);
+    }
+
+    #[test]
+    fn export_config_audio_codec_variants() {
+        for codec in [
+            ExportAudioCodec::Aac,
+            ExportAudioCodec::Opus,
+            ExportAudioCodec::Flac,
+        ] {
+            let config = ExportConfig {
+                output_path: "/tmp/audio_test.mkv".into(),
+                format: ExportFormat::Mkv,
+                width: 1920,
+                height: 1080,
+                frame_rate: (30, 1),
+                sample_rate: 48000,
+                channels: 2,
+                audio_codec: Some(codec),
+                hardware_accel: false,
+                encoder: ExportEncoder::default(),
+            };
+            let json = serde_json::to_string(&config).unwrap();
+            let back: ExportConfig = serde_json::from_str(&json).unwrap();
+            assert_eq!(back.audio_codec, Some(codec));
+        }
+    }
+
+    #[test]
+    fn export_audio_codec_serde_roundtrip() {
+        for (variant, expected) in [
+            (ExportAudioCodec::Aac, "\"Aac\""),
+            (ExportAudioCodec::Opus, "\"Opus\""),
+            (ExportAudioCodec::Flac, "\"Flac\""),
+        ] {
+            let json = serde_json::to_string(&variant).unwrap();
+            assert_eq!(json, expected);
+            let back: ExportAudioCodec = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, variant);
+        }
+    }
+
+    #[test]
+    fn export_config_encoder_defaults_to_auto() {
+        let json = r#"{
+            "output_path": "/tmp/out.mp4",
+            "format": "Mp4",
+            "width": 1920,
+            "height": 1080,
+            "frame_rate": [30, 1],
+            "sample_rate": 48000,
+            "channels": 2
+        }"#;
+        let config: ExportConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.encoder, ExportEncoder::Auto);
+        assert_eq!(config.audio_codec, None);
+    }
+
+    #[test]
+    fn export_config_serde_with_encoder() {
+        for encoder in [
+            ExportEncoder::Auto,
+            ExportEncoder::Software,
+            ExportEncoder::Vaapi,
+            ExportEncoder::Nvenc,
+            ExportEncoder::Tarang,
+        ] {
+            let config = ExportConfig {
+                output_path: "/tmp/enc_test.mp4".into(),
+                format: ExportFormat::Mp4,
+                width: 1920,
+                height: 1080,
+                frame_rate: (30, 1),
+                sample_rate: 48000,
+                channels: 2,
+                audio_codec: None,
+                hardware_accel: false,
+                encoder: encoder.clone(),
+            };
+            let json = serde_json::to_string(&config).unwrap();
+            let back: ExportConfig = serde_json::from_str(&json).unwrap();
+            assert_eq!(back.encoder, encoder);
+        }
+    }
+
+    #[test]
+    fn export_progress_serde_roundtrip() {
+        let p = ExportProgress {
+            frames_written: 42,
+            total_frames: 100,
+            done: false,
+        };
+        let json = serde_json::to_string(&p).unwrap();
+        let back: ExportProgress = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.frames_written, 42);
+        assert_eq!(back.total_frames, 100);
+        assert!(!back.done);
+    }
+
+    #[test]
+    fn export_progress_done_serde() {
+        let p = ExportProgress {
+            frames_written: 200,
+            total_frames: 200,
+            done: true,
+        };
+        let json = serde_json::to_string(&p).unwrap();
+        let back: ExportProgress = serde_json::from_str(&json).unwrap();
+        assert!(back.done);
+        assert!((back.fraction() - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn available_encoders_contains_software_and_auto() {
+        let encoders = available_encoders();
+        assert!(
+            encoders.contains(&ExportEncoder::Software),
+            "Software encoder must always be available"
+        );
+        assert!(
+            encoders.contains(&ExportEncoder::Auto),
+            "Auto must always be in the list"
+        );
+        // Auto should be last
+        assert_eq!(
+            encoders.last(),
+            Some(&ExportEncoder::Auto),
+            "Auto should be the last element"
+        );
+    }
+
+    #[test]
+    fn available_encoders_software_is_first() {
+        let encoders = available_encoders();
+        assert_eq!(
+            encoders.first(),
+            Some(&ExportEncoder::Software),
+            "Software should be the first element"
+        );
+    }
+
+    #[test]
+    fn export_format_clone_and_copy() {
+        let f = ExportFormat::ProRes;
+        let f2 = f; // Copy
+        let f3 = f;
+        assert_eq!(f, f2);
+        assert_eq!(f, f3);
+    }
+
+    #[test]
+    fn export_config_clone() {
+        let config = ExportConfig {
+            output_path: "/tmp/clone_test.mp4".into(),
+            format: ExportFormat::WebM,
+            width: 640,
+            height: 480,
+            frame_rate: (25, 1),
+            sample_rate: 22050,
+            channels: 1,
+            audio_codec: Some(ExportAudioCodec::Opus),
+            hardware_accel: false,
+            encoder: ExportEncoder::Software,
+        };
+        let cloned = config.clone();
+        assert_eq!(cloned.output_path, config.output_path);
+        assert_eq!(cloned.format, config.format);
+        assert_eq!(cloned.width, config.width);
+        assert_eq!(cloned.encoder, config.encoder);
+        assert_eq!(cloned.audio_codec, config.audio_codec);
+    }
 }

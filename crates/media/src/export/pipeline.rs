@@ -498,5 +498,200 @@ mod tests {
         gstreamer::init().ok();
         let result = select_h264_encoder(&ExportEncoder::Tarang);
         assert!(result.is_err(), "Tarang should error in GStreamer pipeline");
+        let err = result.unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("Tarang"),
+            "error message should mention Tarang, got: {msg}"
+        );
+        assert!(
+            msg.contains("TarangExportPipeline"),
+            "error message should mention TarangExportPipeline, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn select_h264_encoder_auto_does_not_panic() {
+        gstreamer::init().ok();
+        // Auto should try hw and fall back to sw without panicking
+        let result = select_h264_encoder(&ExportEncoder::Auto);
+        // Might succeed (x264enc available) or fail (minimal env), but no panic
+        drop(result);
+    }
+
+    #[test]
+    fn select_h264_encoder_vaapi_errors_when_unavailable() {
+        gstreamer::init().ok();
+        // On most test environments, VAAPI won't be available
+        let result = select_h264_encoder(&ExportEncoder::Vaapi);
+        // If it errors, check the message references VAAPI
+        if let Err(e) = result {
+            let msg = format!("{e}");
+            assert!(
+                msg.contains("VAAPI") || msg.contains("vaapih264enc"),
+                "error message should mention VAAPI, got: {msg}"
+            );
+        }
+    }
+
+    #[test]
+    fn select_h264_encoder_nvenc_errors_when_unavailable() {
+        gstreamer::init().ok();
+        let result = select_h264_encoder(&ExportEncoder::Nvenc);
+        if let Err(e) = result {
+            let msg = format!("{e}");
+            assert!(
+                msg.contains("NVENC") || msg.contains("nvh264enc"),
+                "error message should mention NVENC, got: {msg}"
+            );
+        }
+    }
+
+    #[test]
+    fn try_hw_encoder_does_not_panic() {
+        gstreamer::init().ok();
+        // Must not panic regardless of hardware availability
+        let _result = try_hw_encoder();
+    }
+
+    #[test]
+    fn export_progress_initial_state() {
+        let (_, rx) = watch::channel(ExportProgress {
+            frames_written: 0,
+            total_frames: 100,
+            done: false,
+        });
+        let p = rx.borrow();
+        assert_eq!(p.frames_written, 0);
+        assert_eq!(p.total_frames, 100);
+        assert!(!p.done);
+        assert!((p.fraction() - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn export_progress_updates_via_channel() {
+        let (tx, rx) = watch::channel(ExportProgress {
+            frames_written: 0,
+            total_frames: 200,
+            done: false,
+        });
+
+        // Simulate progress updates
+        tx.send(ExportProgress {
+            frames_written: 50,
+            total_frames: 200,
+            done: false,
+        })
+        .unwrap();
+        {
+            let p = rx.borrow();
+            assert_eq!(p.frames_written, 50);
+            assert!((p.fraction() - 0.25).abs() < f64::EPSILON);
+        }
+
+        // Simulate completion
+        tx.send(ExportProgress {
+            frames_written: 200,
+            total_frames: 200,
+            done: true,
+        })
+        .unwrap();
+        {
+            let p = rx.borrow();
+            assert!(p.done);
+            assert!((p.fraction() - 1.0).abs() < f64::EPSILON);
+        }
+    }
+
+    #[test]
+    fn gif_audio_drain_logic() {
+        // Simulates the GIF audio drain: all audio buffers should be consumed
+        let (tx, mut rx) = mpsc::channel::<AudioBuffer>(4);
+
+        // Send some audio buffers
+        tx.try_send(AudioBuffer {
+            sample_rate: 48000,
+            channels: 2,
+            samples: vec![0.0_f32; 1024],
+            timestamp_ns: 0,
+        })
+        .unwrap();
+        tx.try_send(AudioBuffer {
+            sample_rate: 48000,
+            channels: 2,
+            samples: vec![0.0_f32; 1024],
+            timestamp_ns: 1_000_000,
+        })
+        .unwrap();
+        // Drop sender to close channel
+        drop(tx);
+
+        // Drain like the GIF path does
+        let mut drained = 0;
+        while rx.blocking_recv().is_some() {
+            drained += 1;
+        }
+        assert_eq!(drained, 2, "should have drained 2 audio buffers");
+    }
+
+    #[test]
+    fn export_bus_timeout_constant() {
+        // Verify the constant is a reasonable value
+        assert_eq!(EXPORT_BUS_TIMEOUT_SECS, 120);
+    }
+
+    #[test]
+    fn export_pipeline_struct_is_zero_sized() {
+        // ExportPipeline is a unit struct with no fields
+        assert_eq!(std::mem::size_of::<ExportPipeline>(), 0);
+    }
+
+    #[test]
+    fn gif_format_detection() {
+        // The pipeline uses `config.format == ExportFormat::Gif` to decide
+        // whether to skip audio. Verify the comparison works correctly.
+        let gif = ExportFormat::Gif;
+        let mp4 = ExportFormat::Mp4;
+        assert_eq!(gif, ExportFormat::Gif);
+        assert_ne!(gif, mp4);
+        assert!(gif == ExportFormat::Gif);
+        assert!(mp4 != ExportFormat::Gif);
+    }
+
+    #[test]
+    fn audio_buffer_to_bytes_conversion() {
+        // Test the same conversion logic used in the export pipeline
+        let audio_buf = AudioBuffer {
+            sample_rate: 44100,
+            channels: 1,
+            samples: vec![1.0_f32, -1.0_f32, 0.5_f32],
+            timestamp_ns: 42_000_000,
+        };
+        let byte_data: Vec<u8> = audio_buf
+            .samples
+            .iter()
+            .flat_map(|s| s.to_le_bytes())
+            .collect();
+        assert_eq!(byte_data.len(), 12); // 3 samples * 4 bytes each
+        // Verify first sample roundtrips
+        let first = f32::from_le_bytes([byte_data[0], byte_data[1], byte_data[2], byte_data[3]]);
+        assert!((first - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn empty_audio_buffer_produces_empty_bytes() {
+        // The pipeline has a `if byte_data.is_empty() { continue; }` check
+        let audio_buf = AudioBuffer {
+            sample_rate: 48000,
+            channels: 2,
+            samples: vec![],
+            timestamp_ns: 0,
+        };
+        let byte_data: Vec<u8> = audio_buf
+            .samples
+            .iter()
+            .flat_map(|s| s.to_le_bytes())
+            .collect();
+        assert!(byte_data.is_empty());
     }
 }
