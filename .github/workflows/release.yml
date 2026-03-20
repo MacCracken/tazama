@@ -48,8 +48,6 @@ jobs:
       - name: Install Windows deps (GStreamer)
         if: matrix.platform == 'windows'
         uses: blinemedical/setup-gstreamer@v1
-        with:
-          version: '1.24.12'
 
       - name: Install Windows deps (codecs)
         if: matrix.platform == 'windows'
