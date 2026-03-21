@@ -48,16 +48,18 @@ fn bench_pixel_conversion(c: &mut Criterion) {
     let w = 1920u32;
     let h = 1080u32;
     // Generate RGBA test frame
-    let rgba: Vec<u8> = (0..(w * h * 4) as usize)
-        .map(|i| (i % 256) as u8)
-        .collect();
+    let rgba: Vec<u8> = (0..(w * h * 4) as usize).map(|i| (i % 256) as u8).collect();
 
     let mut group = c.benchmark_group("pixel_conversion");
 
     // RGBA → YUV420p via tarang (rgb24_to_yuv420p)
     group.bench_function("tarang_rgba_to_yuv_1080p", |b| {
         b.iter(|| {
-            let rgb: Vec<u8> = rgba.chunks_exact(4).flat_map(|c| &c[..3]).copied().collect();
+            let rgb: Vec<u8> = rgba
+                .chunks_exact(4)
+                .flat_map(|c| &c[..3])
+                .copied()
+                .collect();
             let rgb_frame = tarang::core::VideoFrame {
                 data: Bytes::from(rgb),
                 pixel_format: tarang::core::PixelFormat::Rgb24,
@@ -71,7 +73,11 @@ fn bench_pixel_conversion(c: &mut Criterion) {
     });
 
     // YUV420p → RGBA via tarang (yuv420p_to_rgb24)
-    let rgb: Vec<u8> = rgba.chunks_exact(4).flat_map(|c| &c[..3]).copied().collect();
+    let rgb: Vec<u8> = rgba
+        .chunks_exact(4)
+        .flat_map(|c| &c[..3])
+        .copied()
+        .collect();
     let rgb_frame = tarang::core::VideoFrame {
         data: Bytes::from(rgb),
         pixel_format: tarang::core::PixelFormat::Rgb24,
@@ -97,9 +103,7 @@ fn bench_pixel_conversion(c: &mut Criterion) {
 
 fn bench_loudness(c: &mut Criterion) {
     // 1 second of 48kHz stereo audio
-    let samples: Vec<f32> = (0..96000)
-        .map(|i| (i as f32 * 0.01).sin() * 0.5)
-        .collect();
+    let samples: Vec<f32> = (0..96000).map(|i| (i as f32 * 0.01).sin() * 0.5).collect();
     let buf = tazama_media::AudioBuffer {
         sample_rate: 48000,
         channels: 2,
@@ -118,12 +122,7 @@ fn bench_loudness(c: &mut Criterion) {
     group.bench_function("normalize_1s_stereo", |b| {
         b.iter(|| {
             let mut s = samples.clone();
-            tazama_media::loudness::normalize_audio(
-                black_box(&mut s),
-                2,
-                48000,
-                -14.0,
-            );
+            tazama_media::loudness::normalize_audio(black_box(&mut s), 2, 48000, -14.0);
             black_box(s.len());
         })
     });
@@ -154,9 +153,10 @@ fn bench_waveform(c: &mut Criterion) {
                 .enable_all()
                 .build()
                 .unwrap();
-            rt.block_on(
-                tazama_media::waveform::extract_waveform(black_box(&wav_path), 100),
-            )
+            rt.block_on(tazama_media::waveform::extract_waveform(
+                black_box(&wav_path),
+                100,
+            ))
             .unwrap()
         })
     });
@@ -167,9 +167,10 @@ fn bench_waveform(c: &mut Criterion) {
                 .enable_all()
                 .build()
                 .unwrap();
-            rt.block_on(
-                tazama_media::waveform::extract_waveform(black_box(&wav_path), 200),
-            )
+            rt.block_on(tazama_media::waveform::extract_waveform(
+                black_box(&wav_path),
+                200,
+            ))
             .unwrap()
         })
     });
@@ -263,11 +264,8 @@ fn bench_ai_highlights(c: &mut Criterion) {
                 .enable_all()
                 .build()
                 .unwrap();
-            rt.block_on(tazama_media::ai::detect_highlights(
-                black_box(&mp4_path),
-                5,
-            ))
-            .unwrap()
+            rt.block_on(tazama_media::ai::detect_highlights(black_box(&mp4_path), 5))
+                .unwrap()
         })
     });
 
@@ -294,7 +292,7 @@ fn bench_ai_highlights(c: &mut Criterion) {
 
 fn bench_video_scale(c: &mut Criterion) {
     use bytes::Bytes;
-    use tarang::video::scale::{scale_frame, ScaleFilter};
+    use tarang::video::scale::{ScaleFilter, scale_frame};
 
     let w = 1920u32;
     let h = 1080u32;

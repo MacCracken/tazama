@@ -93,7 +93,9 @@ pub enum EffectKind {
     },
 
     // Audio loudness normalization
-    LoudnessNormalize { target_lufs: f32 },
+    LoudnessNormalize {
+        target_lufs: f32,
+    },
 
     // Plugin effect
     Plugin {

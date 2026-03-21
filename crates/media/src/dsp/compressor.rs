@@ -41,9 +41,7 @@ mod tests {
 
     fn make_sine(freq: f64, sr: u32, n: usize, amp: f32) -> Vec<f32> {
         (0..n)
-            .map(|i| {
-                (i as f64 / sr as f64 * freq * 2.0 * std::f64::consts::PI).sin() as f32 * amp
-            })
+            .map(|i| (i as f64 / sr as f64 * freq * 2.0 * std::f64::consts::PI).sin() as f32 * amp)
             .collect()
     }
 

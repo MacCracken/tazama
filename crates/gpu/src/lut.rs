@@ -17,8 +17,7 @@ pub struct Lut3D {
 /// - Data lines are `R G B` float triplets, one per line
 /// - Total entries must equal `size^3`
 pub fn parse_cube(content: &str) -> Result<Lut3D, String> {
-    let ranga_lut =
-        ranga::filter::Lut3d::from_cube(content).map_err(|e| e.to_string())?;
+    let ranga_lut = ranga::filter::Lut3d::from_cube(content).map_err(|e| e.to_string())?;
     Ok(Lut3D {
         size: ranga_lut.size as u32,
         data: ranga_lut.data,

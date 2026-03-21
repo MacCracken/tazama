@@ -284,8 +284,8 @@ pub async fn measure_loudness(path: String) -> Result<f64, String> {
     tazama_media::init().map_err(|e| e.to_string())?;
 
     let path = std::path::PathBuf::from(path);
-    let mut rx = tazama_media::decode::audio::AudioDecoder::decode(&path)
-        .map_err(|e| e.to_string())?;
+    let mut rx =
+        tazama_media::decode::audio::AudioDecoder::decode(&path).map_err(|e| e.to_string())?;
 
     // Collect all decoded audio into one buffer
     let mut all_samples = Vec::new();
@@ -328,21 +328,15 @@ pub async fn generate_thumbnails(
 ) -> Result<Vec<ThumbnailResult>, String> {
     tazama_media::init().map_err(|e| e.to_string())?;
 
-    let thumbs = tazama_media::thumbnail::generate_thumbnails(
-        std::path::Path::new(&path),
-        spec,
-    )
-    .await
-    .map_err(|e| e.to_string())?;
+    let thumbs = tazama_media::thumbnail::generate_thumbnails(std::path::Path::new(&path), spec)
+        .await
+        .map_err(|e| e.to_string())?;
 
     Ok(thumbs
         .into_iter()
         .map(|(timestamp_ms, data)| ThumbnailResult {
             timestamp_ms,
-            data: base64::Engine::encode(
-                &base64::engine::general_purpose::STANDARD,
-                &data,
-            ),
+            data: base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &data),
         })
         .collect())
 }
@@ -361,12 +355,9 @@ pub async fn detect_highlights(
     max_highlights: u32,
 ) -> Result<Vec<tazama_media::ai::Highlight>, String> {
     tazama_media::init().map_err(|e| e.to_string())?;
-    tazama_media::ai::detect_highlights(
-        std::path::Path::new(&path),
-        max_highlights as usize,
-    )
-    .await
-    .map_err(|e| e.to_string())
+    tazama_media::ai::detect_highlights(std::path::Path::new(&path), max_highlights as usize)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -377,8 +368,8 @@ pub async fn transcribe_audio(
     tazama_media::init().map_err(|e| e.to_string())?;
 
     let path = std::path::PathBuf::from(path);
-    let mut rx = tazama_media::decode::audio::AudioDecoder::decode(&path)
-        .map_err(|e| e.to_string())?;
+    let mut rx =
+        tazama_media::decode::audio::AudioDecoder::decode(&path).map_err(|e| e.to_string())?;
 
     let mut all_samples = Vec::new();
     let mut sample_rate = 48000u32;
@@ -426,8 +417,7 @@ pub async fn transcribe_audio(
         chunk_duration_secs: 30.0,
     };
 
-    let client = tarang::ai::HooshClient::new(hoosh_config)
-        .map_err(|e| e.to_string())?;
+    let client = tarang::ai::HooshClient::new(hoosh_config).map_err(|e| e.to_string())?;
     let result = client
         .transcribe(&request, &prepared)
         .await
@@ -457,16 +447,14 @@ pub async fn auto_color_correct(
 
     let path = std::path::PathBuf::from(path);
     tokio::task::spawn_blocking(move || {
-        let mut demuxer = tazama_media::thumbnail::create_demuxer(&path)
-            .map_err(|e| e.to_string())?;
+        let mut demuxer =
+            tazama_media::thumbnail::create_demuxer(&path).map_err(|e| e.to_string())?;
         let info = demuxer.probe().map_err(|e| e.to_string())?;
-        let (video_stream_idx, codec) = tazama_media::thumbnail::find_video_stream(&info)
-            .ok_or("no video stream")?;
+        let (video_stream_idx, codec) =
+            tazama_media::thumbnail::find_video_stream(&info).ok_or("no video stream")?;
 
-        let config = tarang::video::DecoderConfig::for_codec(codec)
-            .map_err(|e| e.to_string())?;
-        let mut decoder = tarang::video::VideoDecoder::new(config)
-            .map_err(|e| e.to_string())?;
+        let config = tarang::video::DecoderConfig::for_codec(codec).map_err(|e| e.to_string())?;
+        let mut decoder = tarang::video::VideoDecoder::new(config).map_err(|e| e.to_string())?;
         if let Some(tarang::core::StreamInfo::Video(vs)) = info.streams.get(video_stream_idx) {
             decoder.init(vs);
         }
@@ -478,7 +466,8 @@ pub async fn auto_color_correct(
             if packet.stream_index != video_stream_idx {
                 continue;
             }
-            decoder.send_packet(&packet.data, packet.timestamp)
+            decoder
+                .send_packet(&packet.data, packet.timestamp)
                 .map_err(|e| e.to_string())?;
 
             while let Ok(frame) = decoder.receive_frame() {
@@ -512,8 +501,8 @@ pub async fn describe_clip(
 
     // First transcribe
     let path_buf = std::path::PathBuf::from(&path);
-    let mut rx = tazama_media::decode::audio::AudioDecoder::decode(&path_buf)
-        .map_err(|e| e.to_string())?;
+    let mut rx =
+        tazama_media::decode::audio::AudioDecoder::decode(&path_buf).map_err(|e| e.to_string())?;
 
     let mut all_samples = Vec::new();
     let mut sample_rate = 48000u32;
@@ -560,8 +549,7 @@ pub async fn describe_clip(
             max_wav_bytes: 50 * 1024 * 1024,
             chunk_duration_secs: 30.0,
         };
-        let client = tarang::ai::HooshClient::new(hoosh_config)
-            .map_err(|e| e.to_string())?;
+        let client = tarang::ai::HooshClient::new(hoosh_config).map_err(|e| e.to_string())?;
         match client.transcribe(&request, &prepared).await {
             Ok(result) => result
                 .segments

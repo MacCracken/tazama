@@ -14,12 +14,7 @@ pub fn measure_loudness(buf: &AudioBuffer) -> f64 {
 ///
 /// Converts the samples to a tarang `AudioBuffer`, runs loudness normalization,
 /// and copies the result back into the original slice.
-pub fn normalize_audio(
-    samples: &mut [f32],
-    channels: u16,
-    sample_rate: u32,
-    target_lufs: f32,
-) {
+pub fn normalize_audio(samples: &mut [f32], channels: u16, sample_rate: u32, target_lufs: f32) {
     if samples.is_empty() {
         return;
     }
@@ -92,7 +87,10 @@ mod tests {
         let original = samples.clone();
         normalize_audio(&mut samples, 1, 48000, -23.0);
         // After normalizing to -23 LUFS, the samples should differ from the original
-        let changed = samples.iter().zip(&original).any(|(a, b)| (a - b).abs() > 1e-6);
+        let changed = samples
+            .iter()
+            .zip(&original)
+            .any(|(a, b)| (a - b).abs() > 1e-6);
         assert!(changed, "normalization should modify samples");
     }
 }

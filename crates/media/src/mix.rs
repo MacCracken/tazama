@@ -1301,8 +1301,7 @@ mod tests {
         let mut samples: Vec<f32> = (0..8192)
             .map(|i| {
                 let t = (i / 2) as f64 / 48000.0;
-                let sine =
-                    (2.0 * std::f64::consts::PI * 440.0 * t).sin() as f32 * 0.3;
+                let sine = (2.0 * std::f64::consts::PI * 440.0 * t).sin() as f32 * 0.3;
                 let noise = ((i as f32 * 13.7).sin() * 0.02); // deterministic low-level noise
                 sine + noise
             })
@@ -1324,7 +1323,10 @@ mod tests {
             (sum / samples.len() as f64).sqrt()
         };
         // Signal should still have energy (not zeroed out)
-        assert!(after_rms > 0.01, "signal should not be zeroed: rms={after_rms}");
+        assert!(
+            after_rms > 0.01,
+            "signal should not be zeroed: rms={after_rms}"
+        );
     }
 
     #[test]

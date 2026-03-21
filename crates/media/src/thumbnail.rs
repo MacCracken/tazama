@@ -106,7 +106,7 @@ fn generate_thumbnails_scene_based(
     spec: ThumbnailSpec,
 ) -> Result<Vec<(u64, Bytes)>, MediaPipelineError> {
     use tarang::ai::{SceneDetectionConfig, SceneDetector};
-    use tarang::video::scale::{scale_frame, ScaleFilter};
+    use tarang::video::scale::{ScaleFilter, scale_frame};
 
     let mut demuxer = create_demuxer(path)?;
     let info = demuxer.probe()?;
@@ -298,7 +298,9 @@ pub fn create_demuxer(path: &Path) -> Result<Box<dyn tarang::demux::Demuxer>, Me
     Ok(demuxer)
 }
 
-pub fn find_video_stream(info: &tarang::core::MediaInfo) -> Option<(usize, tarang::core::VideoCodec)> {
+pub fn find_video_stream(
+    info: &tarang::core::MediaInfo,
+) -> Option<(usize, tarang::core::VideoCodec)> {
     for (idx, stream) in info.streams.iter().enumerate() {
         if let tarang::core::StreamInfo::Video(vs) = stream {
             return Some((idx, vs.codec));

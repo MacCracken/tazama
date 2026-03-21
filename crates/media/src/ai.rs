@@ -3,11 +3,10 @@
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-use tarang::ai::{
-    SceneDetectionConfig, SceneDetector, SceneBoundary, SceneBoundaryType,
-    content_score,
-};
 use tarang::ai::scene::compute_luminance_histogram;
+use tarang::ai::{
+    SceneBoundary, SceneBoundaryType, SceneDetectionConfig, SceneDetector, content_score,
+};
 use tarang::core::VideoFrame;
 
 use crate::error::MediaPipelineError;
@@ -146,7 +145,10 @@ fn detect_highlights_sync(
             scene_scores[i + 1].0
         } else {
             // Estimate from last boundary or add 5 seconds
-            boundaries.last().map(|b| b.timestamp.as_millis() as u64).unwrap_or(start_ms + 5000)
+            boundaries
+                .last()
+                .map(|b| b.timestamp.as_millis() as u64)
+                .unwrap_or(start_ms + 5000)
         };
         if end_ms > start_ms {
             highlights.push(Highlight {
@@ -158,7 +160,11 @@ fn detect_highlights_sync(
     }
 
     // Sort by score descending, take top N
-    highlights.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    highlights.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     highlights.truncate(max_highlights);
     // Re-sort by time for output
     highlights.sort_by_key(|h| h.start_ms);
@@ -247,21 +253,27 @@ pub fn auto_color_correct(frame: &VideoFrame) -> ColorCorrection {
     // Compute mean luminance
     let total: f64 = histogram.iter().sum();
     let mean: f64 = if total > 0.0 {
-        histogram.iter().enumerate()
+        histogram
+            .iter()
+            .enumerate()
             .map(|(i, &v)| i as f64 * v)
-            .sum::<f64>() / total
+            .sum::<f64>()
+            / total
     } else {
         128.0
     };
 
     // Compute standard deviation
     let variance: f64 = if total > 0.0 {
-        histogram.iter().enumerate()
+        histogram
+            .iter()
+            .enumerate()
             .map(|(i, &v)| {
                 let diff = i as f64 - mean;
                 diff * diff * v
             })
-            .sum::<f64>() / total
+            .sum::<f64>()
+            / total
     } else {
         0.0
     };
@@ -313,10 +325,7 @@ pub struct TransitionSuggestion {
 /// Suggest a transition type based on scene boundary characteristics.
 ///
 /// Uses the change score and boundary type to recommend an appropriate transition.
-pub fn suggest_transition(
-    boundary: &SceneBoundary,
-    fps: f64,
-) -> TransitionSuggestion {
+pub fn suggest_transition(boundary: &SceneBoundary, fps: f64) -> TransitionSuggestion {
     match boundary.boundary_type {
         SceneBoundaryType::HardCut => {
             if boundary.change_score > 0.8 {
@@ -349,7 +358,8 @@ pub fn suggest_transition(
                 TransitionSuggestion {
                     kind: "Fade".to_string(),
                     duration_frames: dur.max(1),
-                    reason: "Subtle scene change — fade creates a gentle mood transition".to_string(),
+                    reason: "Subtle scene change — fade creates a gentle mood transition"
+                        .to_string(),
                 }
             }
         }
@@ -435,8 +445,7 @@ impl Default for LlmConfig {
         Self {
             endpoint: std::env::var("HOOSH_ENDPOINT")
                 .unwrap_or_else(|_| "http://localhost:8088".to_string()),
-            model: std::env::var("HOOSH_MODEL")
-                .unwrap_or_else(|_| "llama3".to_string()),
+            model: std::env::var("HOOSH_MODEL").unwrap_or_else(|_| "llama3".to_string()),
             api_key: std::env::var("HOOSH_API_KEY").ok(),
         }
     }
@@ -656,8 +665,18 @@ mod tests {
     #[test]
     fn srt_format_basic() {
         let cues = vec![
-            SubtitleCue { index: 1, start_ms: 0, end_ms: 2500, text: "Hello world".into() },
-            SubtitleCue { index: 2, start_ms: 3000, end_ms: 5500, text: "Second line".into() },
+            SubtitleCue {
+                index: 1,
+                start_ms: 0,
+                end_ms: 2500,
+                text: "Hello world".into(),
+            },
+            SubtitleCue {
+                index: 2,
+                start_ms: 3000,
+                end_ms: 5500,
+                text: "Second line".into(),
+            },
         ];
         let srt = segments_to_srt(&cues);
         assert!(srt.contains("00:00:00,000 --> 00:00:02,500"));
@@ -667,9 +686,12 @@ mod tests {
 
     #[test]
     fn vtt_format_basic() {
-        let cues = vec![
-            SubtitleCue { index: 1, start_ms: 1000, end_ms: 3000, text: "Test".into() },
-        ];
+        let cues = vec![SubtitleCue {
+            index: 1,
+            start_ms: 1000,
+            end_ms: 3000,
+            text: "Test".into(),
+        }];
         let vtt = segments_to_vtt(&cues);
         assert!(vtt.starts_with("WEBVTT"));
         assert!(vtt.contains("00:00:01.000 --> 00:00:03.000"));

@@ -2,7 +2,7 @@ use std::io::{Seek, Write};
 use std::time::Duration;
 
 use bytes::Bytes;
-use tarang::demux::{MkvMuxer, Mp4Muxer, Muxer, MuxConfig, VideoMuxConfig};
+use tarang::demux::{MkvMuxer, Mp4Muxer, MuxConfig, Muxer, VideoMuxConfig};
 use tokio::sync::watch;
 use tracing::{debug, error, info, info_span, warn};
 
@@ -35,10 +35,7 @@ impl TarangExportPipeline {
                 );
                 Self::run_tarang(config, video_rx, audio_rx, total_frames)
             }
-            ExportFormat::WebM
-            | ExportFormat::ProRes
-            | ExportFormat::DnxHr
-            | ExportFormat::Gif => {
+            ExportFormat::WebM | ExportFormat::ProRes | ExportFormat::DnxHr | ExportFormat::Gif => {
                 info!(
                     "tarang export pipeline: {:?} format not fully supported by tarang, \
                      falling back to GStreamer",
@@ -148,7 +145,11 @@ fn select_audio_codec(config: &ExportConfig) -> tarang::core::AudioCodec {
 
 /// Convert RGBA pixel data to YUV420p via tarang's pixel format conversion.
 fn rgba_to_yuv420p(rgba: &[u8], width: u32, height: u32) -> Vec<u8> {
-    let rgb: Vec<u8> = rgba.chunks_exact(4).flat_map(|c| &c[..3]).copied().collect();
+    let rgb: Vec<u8> = rgba
+        .chunks_exact(4)
+        .flat_map(|c| &c[..3])
+        .copied()
+        .collect();
     let rgb_frame = tarang::core::VideoFrame {
         data: Bytes::from(rgb),
         pixel_format: tarang::core::PixelFormat::Rgb24,
@@ -177,7 +178,10 @@ fn convert_audio_buffer(buf: &AudioBuffer) -> tarang::core::AudioBuffer {
 }
 
 /// Build `MuxConfig` for audio from the export configuration.
-fn build_audio_mux_config(config: &ExportConfig, audio_codec: tarang::core::AudioCodec) -> MuxConfig {
+fn build_audio_mux_config(
+    config: &ExportConfig,
+    audio_codec: tarang::core::AudioCodec,
+) -> MuxConfig {
     MuxConfig {
         codec: audio_codec,
         sample_rate: config.sample_rate,
@@ -298,12 +302,16 @@ fn run_tarang_export(
 
     // Create muxer based on format
     let mut muxer: Box<dyn ExportMuxer> = match config.format {
-        ExportFormat::Mp4 => Box::new(Mp4ExportMuxer(
-            Mp4Muxer::new_with_video(writer, audio_mux_config, video_mux_config),
-        )),
-        _ => Box::new(MkvExportMuxer(
-            MkvMuxer::new_webm(writer, audio_mux_config, video_mux_config),
-        )),
+        ExportFormat::Mp4 => Box::new(Mp4ExportMuxer(Mp4Muxer::new_with_video(
+            writer,
+            audio_mux_config,
+            video_mux_config,
+        ))),
+        _ => Box::new(MkvExportMuxer(MkvMuxer::new_webm(
+            writer,
+            audio_mux_config,
+            video_mux_config,
+        ))),
     };
     muxer.write_header()?;
 

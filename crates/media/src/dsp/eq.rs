@@ -93,7 +93,10 @@ mod tests {
         let before = rms(&samples);
         apply_eq(&mut samples, 48000, 1, 0.0, 12.0, 0.0);
         let after = rms(&samples);
-        assert!(after > before, "mid boost should increase RMS: {before} -> {after}");
+        assert!(
+            after > before,
+            "mid boost should increase RMS: {before} -> {after}"
+        );
     }
 
     #[test]
@@ -102,7 +105,10 @@ mod tests {
         let before = rms(&samples);
         apply_eq(&mut samples, 48000, 1, 0.0, -12.0, 0.0);
         let after = rms(&samples);
-        assert!(after < before, "mid cut should decrease RMS: {before} -> {after}");
+        assert!(
+            after < before,
+            "mid cut should decrease RMS: {before} -> {after}"
+        );
     }
 
     #[test]
@@ -126,6 +132,9 @@ mod tests {
         let before = rms(&samples);
         apply_eq(&mut samples, 48000, 1, -12.0, 0.0, 0.0);
         let after = rms(&samples);
-        assert!(after < before, "low cut should decrease RMS for 200Hz signal");
+        assert!(
+            after < before,
+            "low cut should decrease RMS for 200Hz signal"
+        );
     }
 }
