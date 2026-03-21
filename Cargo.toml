@@ -67,6 +67,9 @@ cpal = "0.15"
 # AI / Hardware acceleration
 ai-hwaccel = "0.20.3"
 
+# Image processing (color conversion, LUT, pixel formats)
+ranga = { version = "0.20.5", default-features = false }
+
 # Encoding
 base64 = "0.22"
 

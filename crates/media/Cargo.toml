@@ -22,6 +22,7 @@ rustfft = "6"
 tarang = { version = "0.20.3", features = ["openh264", "openh264-enc", "vpx", "dav1d"] }
 symphonia = { version = "0.5", features = ["all"] }
 ai-hwaccel.workspace = true
+ranga.workspace = true
 reqwest.workspace = true
 serde_json.workspace = true
 wasmtime = { version = "29", optional = true }

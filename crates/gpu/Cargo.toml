@@ -16,6 +16,7 @@ bytes.workspace = true
 tokio.workspace = true
 cosmic-text = "0.12"
 ai-hwaccel.workspace = true
+ranga.workspace = true
 serde.workspace = true
 
 [dev-dependencies]

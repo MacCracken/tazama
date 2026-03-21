@@ -5,19 +5,25 @@ use crate::error::MediaPipelineError;
 
 /// Convert a tarang `VideoFrame` (YUV420p or RGB24) to RGBA bytes.
 ///
-/// Uses `tarang::video::convert::yuv420p_to_rgb24` for the YUV->RGB conversion,
-/// then expands RGB24 to RGBA32 with alpha=255.
+/// Uses `tarang::video::convert::yuv420p_to_rgb24` for YUV→RGB, then
+/// delegates to ranga for RGB24→RGBA32 expansion.
 pub fn yuv420p_to_rgba(frame: &tarang::core::VideoFrame) -> Result<Vec<u8>, MediaPipelineError> {
     let rgb = tarang::video::convert::yuv420p_to_rgb24(frame)
         .map_err(|e| MediaPipelineError::Decode(e.to_string()))?;
 
-    let pixel_count = rgb.data.len() / 3;
-    let mut rgba = Vec::with_capacity(pixel_count * 4);
-    for chunk in rgb.data.chunks_exact(3) {
-        rgba.extend_from_slice(chunk);
-        rgba.push(255);
-    }
-    Ok(rgba)
+    // Use ranga's RGB8→RGBA8 conversion (adds alpha=255)
+    let rgb_buf = ranga::pixel::PixelBuffer::new(
+        rgb.data.to_vec(),
+        rgb.width,
+        rgb.height,
+        ranga::pixel::PixelFormat::Rgb8,
+    )
+    .map_err(|e| MediaPipelineError::Decode(e.to_string()))?;
+
+    let rgba_buf = ranga::convert::rgb8_to_rgba8(&rgb_buf)
+        .map_err(|e| MediaPipelineError::Decode(e.to_string()))?;
+
+    Ok(rgba_buf.data)
 }
 
 /// Convert a tarang `VideoFrame` to a tazama `VideoFrame`.
