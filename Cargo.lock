@@ -1418,6 +1418,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "dhvani"
+version = "0.20.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "30899697e7cb3446a0efba14a17077ebfd355c86d2564293a45dd172e5c625c0"
+dependencies = [
+ "serde",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7081,6 +7092,7 @@ dependencies = [
  "bytes",
  "cpal",
  "criterion",
+ "dhvani",
  "gstreamer",
  "gstreamer-app",
  "gstreamer-audio",
