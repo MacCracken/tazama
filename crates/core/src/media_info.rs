@@ -60,16 +60,11 @@ pub struct WaveformData {
     pub peaks: Vec<Vec<(f32, f32)>>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ThumbnailStrategy {
+    #[default]
     SceneBased,
     ContentBased,
-}
-
-impl Default for ThumbnailStrategy {
-    fn default() -> Self {
-        Self::SceneBased
-    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]

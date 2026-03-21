@@ -1302,11 +1302,11 @@ mod tests {
             .map(|i| {
                 let t = (i / 2) as f64 / 48000.0;
                 let sine = (2.0 * std::f64::consts::PI * 440.0 * t).sin() as f32 * 0.3;
-                let noise = ((i as f32 * 13.7).sin() * 0.02); // deterministic low-level noise
+                let noise = (i as f32 * 13.7).sin() * 0.02; // deterministic low-level noise
                 sine + noise
             })
             .collect();
-        let before_rms = {
+        let _before_rms = {
             let sum: f64 = samples.iter().map(|s| (*s as f64).powi(2)).sum();
             (sum / samples.len() as f64).sqrt()
         };
