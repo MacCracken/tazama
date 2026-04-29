@@ -494,6 +494,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "bote"
+version = "0.50.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
 name = "brotli"
 version = "8.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7072,6 +7082,7 @@ name = "tazama-mcp"
 version = "2026.3.20"
 dependencies = [
  "anyhow",
+ "bote",
  "image",
  "serde",
  "serde_json",

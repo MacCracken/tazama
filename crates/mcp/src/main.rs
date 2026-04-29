@@ -1,6 +1,8 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use anyhow::Result;
+use bote::{ToolDef, ToolSchema};
 use serde_json::{Value, json};
 use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
@@ -166,6 +168,99 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+fn tool_definitions() -> Vec<ToolDef> {
+    vec![
+        ToolDef::new(
+            "tazama_create_project",
+            "Create a new Tazama video project with the given name and resolution",
+            ToolSchema::new(
+                "object",
+                HashMap::from([
+                    ("name".into(), json!({ "type": "string" })),
+                    ("width".into(), json!({ "type": "integer", "default": 1920 })),
+                    ("height".into(), json!({ "type": "integer", "default": 1080 })),
+                ]),
+                vec!["name".into()],
+            ),
+        ),
+        ToolDef::new(
+            "tazama_add_clip",
+            "Add a video or audio clip to a timeline track",
+            ToolSchema::new(
+                "object",
+                HashMap::from([
+                    ("track".into(), json!({ "type": "string", "description": "Track name or ID" })),
+                    ("source".into(), json!({ "type": "string", "description": "Path to media file" })),
+                    ("start_frame".into(), json!({ "type": "integer" })),
+                    ("duration_frames".into(), json!({ "type": "integer" })),
+                ]),
+                vec!["track".into(), "source".into()],
+            ),
+        ),
+        ToolDef::new(
+            "tazama_apply_effect",
+            "Apply a video/audio effect to a clip",
+            ToolSchema::new(
+                "object",
+                HashMap::from([
+                    ("clip_id".into(), json!({ "type": "string" })),
+                    ("effect".into(), json!({ "type": "string", "enum": ["color_grade", "crop", "speed", "fade_in", "fade_out", "volume"] })),
+                    ("params".into(), json!({ "type": "object" })),
+                ]),
+                vec!["clip_id".into(), "effect".into()],
+            ),
+        ),
+        ToolDef::new(
+            "tazama_get_timeline",
+            "Get the current timeline state including all tracks and clips",
+            ToolSchema::new("object", HashMap::new(), vec![]),
+        ),
+        ToolDef::new(
+            "tazama_export",
+            "Export the current project to a video file",
+            ToolSchema::new(
+                "object",
+                HashMap::from([
+                    ("output_path".into(), json!({ "type": "string" })),
+                    ("format".into(), json!({ "type": "string", "enum": ["mp4", "webm"], "default": "mp4" })),
+                ]),
+                vec!["output_path".into()],
+            ),
+        ),
+        ToolDef::new(
+            "tazama_add_marker",
+            "Add a named marker at a specific frame on the timeline",
+            ToolSchema::new(
+                "object",
+                HashMap::from([
+                    ("name".into(), json!({ "type": "string", "description": "Marker name/label" })),
+                    ("frame".into(), json!({ "type": "integer", "description": "Frame position" })),
+                    ("color".into(), json!({ "type": "string", "enum": ["red", "orange", "yellow", "green", "blue", "purple", "white"], "default": "blue" })),
+                ]),
+                vec!["name".into(), "frame".into()],
+            ),
+        ),
+        ToolDef::new(
+            "tazama_extract_frame",
+            "Extract a single frame from a video clip and save it as a PNG file",
+            ToolSchema::new(
+                "object",
+                HashMap::from([
+                    ("clip_id".into(), json!({ "type": "string", "description": "UUID of the clip" })),
+                    ("frame_number".into(), json!({ "type": "integer", "description": "Frame index within the clip" })),
+                    ("output_path".into(), json!({ "type": "string", "description": "Where to write the PNG file" })),
+                ]),
+                vec!["clip_id".into(), "frame_number".into(), "output_path".into()],
+            ),
+        ),
+        ToolDef::new(
+            "tazama_detect_hardware",
+            "Detect available hardware accelerators and encoding backends on the system",
+            ToolSchema::new("object", HashMap::new(), vec![]),
+        ),
+    ]
+}
+
 async fn handle_request(request: &Value, state: &mut ServerState) -> Value {
     let method = request.get("method").and_then(|m| m.as_str()).unwrap_or("");
     let id = request.get("id").cloned().unwrap_or(Value::Null);
@@ -185,108 +280,23 @@ async fn handle_request(request: &Value, state: &mut ServerState) -> Value {
                 }
             }
         }),
-        "tools/list" => json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "result": {
-                "tools": [
-                    {
-                        "name": "tazama_create_project",
-                        "description": "Create a new Tazama video project with the given name and resolution",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "name": { "type": "string" },
-                                "width": { "type": "integer", "default": 1920 },
-                                "height": { "type": "integer", "default": 1080 }
-                            },
-                            "required": ["name"]
-                        }
-                    },
-                    {
-                        "name": "tazama_add_clip",
-                        "description": "Add a video or audio clip to a timeline track",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "track": { "type": "string", "description": "Track name or ID" },
-                                "source": { "type": "string", "description": "Path to media file" },
-                                "start_frame": { "type": "integer" },
-                                "duration_frames": { "type": "integer" }
-                            },
-                            "required": ["track", "source"]
-                        }
-                    },
-                    {
-                        "name": "tazama_apply_effect",
-                        "description": "Apply a video/audio effect to a clip",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "clip_id": { "type": "string" },
-                                "effect": { "type": "string", "enum": ["color_grade", "crop", "speed", "fade_in", "fade_out", "volume"] },
-                                "params": { "type": "object" }
-                            },
-                            "required": ["clip_id", "effect"]
-                        }
-                    },
-                    {
-                        "name": "tazama_get_timeline",
-                        "description": "Get the current timeline state including all tracks and clips",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {},
-                        }
-                    },
-                    {
-                        "name": "tazama_export",
-                        "description": "Export the current project to a video file",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "output_path": { "type": "string" },
-                                "format": { "type": "string", "enum": ["mp4", "webm"], "default": "mp4" }
-                            },
-                            "required": ["output_path"]
-                        }
-                    },
-                    {
-                        "name": "tazama_add_marker",
-                        "description": "Add a named marker at a specific frame on the timeline",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "name": { "type": "string", "description": "Marker name/label" },
-                                "frame": { "type": "integer", "description": "Frame position" },
-                                "color": { "type": "string", "enum": ["red", "orange", "yellow", "green", "blue", "purple", "white"], "default": "blue" }
-                            },
-                            "required": ["name", "frame"]
-                        }
-                    },
-                    {
-                        "name": "tazama_extract_frame",
-                        "description": "Extract a single frame from a video clip and save it as a PNG file",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "clip_id": { "type": "string", "description": "UUID of the clip" },
-                                "frame_number": { "type": "integer", "description": "Frame index within the clip" },
-                                "output_path": { "type": "string", "description": "Where to write the PNG file" }
-                            },
-                            "required": ["clip_id", "frame_number", "output_path"]
-                        }
-                    },
-                    {
-                        "name": "tazama_detect_hardware",
-                        "description": "Detect available hardware accelerators and encoding backends on the system",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {},
-                        }
-                    }
-                ]
-            }
-        }),
+        "tools/list" => {
+            let tools: Vec<Value> = tool_definitions()
+                .into_iter()
+                .map(|t| json!({
+                    "name": t.name,
+                    "description": t.description,
+                    "inputSchema": serde_json::to_value(&t.input_schema).unwrap_or_default(),
+                }))
+                .collect();
+            json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": {
+                    "tools": tools
+                }
+            })
+        }
         "tools/call" => {
             let params = request.get("params").cloned().unwrap_or(json!({}));
             let tool_name = params.get("name").and_then(|n| n.as_str()).unwrap_or("");
